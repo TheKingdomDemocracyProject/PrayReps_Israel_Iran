@@ -19,10 +19,27 @@ app = Flask(__name__)
 
 # Simplified party_info with only relevant parties
 party_info = {
-    'Democrat': {'short_name': 'Dem', 'color': '#0015BC'},
-    'Republican': {'short_name': 'Rep', 'color': '#E81B23'},
-    'Independent': {'short_name': 'Ind', 'color': '#808080'},
-    'Other': {'short_name': 'Other', 'color': '#CCCCCC'}
+    'Lëvizja Vetëvendosje!': {'short_name': 'LVV', 'color': '#CC0033'},
+    'Democratic Party of Kosovo': {'short_name': 'PDK', 'color': '#2E96D2'},
+    'Democratic League of Kosovo': {'short_name': 'LDK', 'color': '#F37476'},
+    'Serbian List': {'short_name': 'SL', 'color': '#000080'},
+    'Alliance for the Future of Kosovo': {'short_name': 'AAK', 'color': '#03112C'},
+    'Alliance for the Future of Kosovo': {'short_name': 'AAK-NISMA', 'color': '#03112C'},
+    'Alliance for the Future of Kosovo': {'short_name': 'NISMA', 'color': '#03112C'},
+    'Kosova Demokratik Türk Partisi': {'short_name': 'KDTP', 'color': '#dd3333'},
+    'New Democratic Initiative of Kosovo': {'short_name': 'IRDK', 'color': '#F58634'},
+    'New Democratic Party': {'short_name': 'NDS', 'color': '#FFFF00'},
+    'For Freedom, Justice and Survival': {'short_name': 'FFJS', 'color': '#5593BA'},
+    'Vakat Coalition': {'short_name': 'VK', 'color': '#00923F'},
+    'Romani Initiative': {'short_name': 'RI', 'color': '#f13737'},
+    'Egyptian Liberal Party': {'short_name': 'PLE', 'color': '#076CA7'},
+    'Social Democratic Union': {'short_name': 'SDU', 'color': '#CF312E'},
+    'Ashkali Party for Integration': {'short_name': 'PAI', 'color': '#0065AD'},
+    'Unique Gorani Party': {'short_name': 'JGP', 'color': '#FFCF40'},
+    'United Roma Party of Kosovo': {'short_name': 'PREBK', 'color': '#009933'},
+    'Other': {'short_name': 'Other', 'color': '#CCCCCC'},
+    'Progressive Movement of Kosovar Roma': {'short_name': 'LPRK', 'color': '#008001'},
+    'Civic Initiative for Freedom, Justice and Survival': {'short_name': 'SPO', 'color': '#3b94be'}
 }
 
 data_queue = Queue.Queue()
@@ -31,7 +48,7 @@ prayed_for = []  # This will store the processed items for statistics
 queued_entries = set()  # To track the unique entries in the queue
 
 # Paths for hex map
-hex_map_path = 'data/20241105_usa_esri_v2.shp'
+hex_map_path = 'data/20250209_kosovo.shp'
 post_label_mapping_path = 'data/post_label to 3CODE.csv'
 heart_img_path = 'static/heart_icons/heart_red.png'
 
@@ -48,7 +65,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # Function to fetch the CSV
 def fetch_csv():
     logging.info("Fetching CSV data")
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRipmW1ZyjBW0Rea2pnK_4v6ZqPqhFX9nI3HnOtpDt2XE6V13FNnXrPTCES_HgQYbzJD4aPvd27No2h/pub?gid=0&single=true&output=csv"
+    url = "data/20250209_kosovo.csv"
     response = requests.get(url)
     data = response.content.decode('utf-8')
     df = pd.read_csv(StringIO(data))
