@@ -1,6 +1,6 @@
-# PrayReps_Kosovo_2025
+# PrayReps_Israel_Iran
 
-A tool to pray for those elected to serve Kosovo on 9th February 2025.
+A tool to pray for those representatives serving the countries of Israel and Iran.
 
 ## Overview
 PrayReps is a tool that will eventually help Christians to pray for any elected representative, anywhere in the world. This Python app is an MVP that has already been used to pray for newly elected governments in the United Kingdom, France and the USA. 
