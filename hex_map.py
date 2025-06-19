@@ -17,8 +17,12 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Load hex map
 def load_hex_map(hex_map_path):
-    hex_map = gpd.read_file(hex_map_path)
-    return hex_map
+    try:
+        hex_map = gpd.read_file(hex_map_path)
+        return hex_map
+    except Exception as e:
+        logging.error(f"Error reading GeoJSON file at {hex_map_path}: {e}", exc_info=True)
+        return None
 
 # Load post_label to 3CODE mapping
 def load_post_label_mapping(post_label_mapping_path):
