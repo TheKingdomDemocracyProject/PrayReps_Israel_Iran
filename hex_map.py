@@ -58,6 +58,12 @@ def load_random_heart_image():
 
 # Plot hex map with white fill color and light grey boundaries
 def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_items_list, queue_items_list, country_code):
+    # ==== DETAILED LOGGING START ====
+    logging.info(f"[plot_hex_map_with_hearts] Processing country_code: {country_code}")
+    logging.info(f"[plot_hex_map_with_hearts] Number of prayed_for_items_list: {len(prayed_for_items_list)}")
+    logging.info(f"[plot_hex_map_with_hearts] Number of queue_items_list: {len(queue_items_list)}")
+    # ==== DETAILED LOGGING END ====
+
     logging.info(f"Plotting hex map for country {country_code}. Output path: {os.path.join(APP_ROOT, 'static/hex_map.png')}")
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
@@ -66,8 +72,22 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
         plt.close(fig)
         return
 
-    hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
-    ax.set_axis_off()
+    # Original line:
+    # hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
+    # ax.set_axis_off()
+
+    if country_code in ['israel', 'iran']:
+        num_prayed = len(prayed_for_items_list)
+        # Determine a base color for hexes based on whether num_prayed is even or odd
+        # This ensures a very obvious visual change if num_prayed changes.
+        fill_color_for_hexes = 'lightyellow' if num_prayed % 2 == 0 else 'lightcyan'
+        logging.info(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={fill_color_for_hexes}")
+        hex_map_gdf.plot(ax=ax, color=fill_color_for_hexes, edgecolor='lightgrey')
+    else:
+        # Default behavior for other countries
+        hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
+
+    ax.set_axis_off() # Ensure axis is turned off after plotting
 
     bounds = hex_map_gdf.geometry.total_bounds
     ax.set_xlim(bounds[0], bounds[2])
@@ -77,6 +97,9 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     logging.info(f"Plotting map for country: {country_code}. Prayed items: {len(prayed_for_items_list)}, Queue items: {len(queue_items_list)}")
 
     if country_code in ['israel', 'iran']:
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Using Random Allocation Strategy.")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         # Random Allocation Strategy
         if 'id' not in hex_map_gdf.columns:
             logging.error(f"'id' column missing in hex_map_gdf for {country_code}. Cannot apply random allocation.")
@@ -84,6 +107,9 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
             return
 
         num_hearts = len(prayed_for_items_list)
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+        logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts to be plotted: {num_hearts}")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         all_hex_ids = list(hex_map_gdf['id'].unique())
 
         if not all_hex_ids:
@@ -92,6 +118,11 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
         else:
             sorted_hex_ids = sorted(all_hex_ids)
             hex_ids_to_color = sorted_hex_ids[:num_hearts]
+            # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+            logging.info(f"[plot_hex_map_with_hearts - {country_code}] hex_ids_to_color (first 5 if many): {hex_ids_to_color[:5]}")
+            if len(hex_ids_to_color) > 5:
+                logging.info(f"[plot_hex_map_with_hearts - {country_code}] ... and {len(hex_ids_to_color) - 5} more hex_ids_to_color.")
+            # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
 
             for hex_id_to_color in hex_ids_to_color:
                 location_geom = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_color]
@@ -178,6 +209,13 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     # Conditional Highlighting for Top Queue Item
     if queue_items_list: # Check if queue is not empty
         top_queue_item = queue_items_list[0]
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+        if country_code in ['israel', 'iran']:
+            if top_queue_item.get('country_code') == country_code:
+                logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item ({top_queue_item.get('person_name')}) matches current country. Attempting highlighting.")
+            else:
+                logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item country ({top_queue_item.get('country_code')}) does not match current country. No highlight.")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         if top_queue_item.get('country_code') == country_code: # Only highlight if top item matches current map's country
             logging.info(f"Attempting to highlight top queue item for {country_code}: {top_queue_item.get('person_name')}")
             if country_code in ['israel', 'iran']:
@@ -187,8 +225,16 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                     all_hex_ids = list(hex_map_gdf['id'].unique())
                     sorted_hex_ids = sorted(all_hex_ids)
 
+                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+                    logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts_already_plotted for highlight check: {num_hearts_already_plotted}")
+                    logging.info(f"[plot_hex_map_with_hearts - {country_code}] Total hexes available for highlight check: {len(sorted_hex_ids)}")
+                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
+
                     if num_hearts_already_plotted < len(sorted_hex_ids):
                         hex_id_to_highlight = sorted_hex_ids[num_hearts_already_plotted]
+                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
+                        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Attempting to highlight hex_id: {hex_id_to_highlight}")
+                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
                         location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
                         if not location_geom_q.empty:
                             geom = location_geom_q.geometry.iloc[0]
@@ -243,8 +289,15 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     else:
         logging.debug("Global queue is empty. Nothing to highlight.")
 
-    plt.savefig(os.path.join(APP_ROOT, 'static/hex_map.png'), bbox_inches='tight', pad_inches=0.5, dpi=100)
+    save_path = os.path.join(APP_ROOT, 'static/hex_map.png')
+    plt.savefig(save_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
     plt.close(fig)  # Close the plot to free memory
+    # ==== DETAILED LOGGING START ====
+    if os.path.exists(save_path):
+        logging.info(f"[plot_hex_map_with_hearts] Successfully saved map to {save_path}")
+    else:
+        logging.error(f"[plot_hex_map_with_hearts] Failed to save map to {save_path}")
+    # ==== DETAILED LOGGING END ====
 # Ensure logging is imported if not already # This line is now redundant due to import at top
 
 # Example usage for Case 2
