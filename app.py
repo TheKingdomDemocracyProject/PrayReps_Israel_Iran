@@ -127,85 +127,63 @@ def process_deputies(csv_data, country_code):
 
 # Function to periodically update the queue
 def update_queue():
-    logging.info("Update_queue thread started.")
     with app.app_context():
+        logging.info("Update_queue thread started.")
         while True:
             try:
                 all_potential_candidates = []
+                # Phase 1: Collect all potential candidates from all countries
+                for country_code_collect in COUNTRIES_CONFIG.keys():
+                    df_update = fetch_csv(country_code_collect)
+                    if df_update.empty:
+                        logging.debug(f"No CSV data for {country_code_collect} in this cycle.")
+                        continue
 
-            # Phase 1: Collect all potential candidates from all countries
-            for country_code_collect in COUNTRIES_CONFIG.keys():
-                df_update = fetch_csv(country_code_collect)
-                if df_update.empty:
-                    logging.debug(f"No CSV data for {country_code_collect} in this cycle.")
-                    continue
+                    df_update = df_update.sample(frac=1).reset_index(drop=True)
+                    current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
+                    country_candidates_selected_this_cycle = set()
 
-                df_update = df_update.sample(frac=1).reset_index(drop=True)
-                current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
+                    for index, row in df_update.iterrows():
+                        if row.get('person_name'):
+                            item = row.to_dict()
+                            item['country_code'] = country_code_collect
+                            if not item.get('party'):
+                                item['party'] = 'Other'
+                            item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
+                            entry_id = (item['person_name'], item_post_label)
+                            if entry_id not in current_prayed_for_ids and \
+                               entry_id not in country_candidates_selected_this_cycle:
+                                image_url = item.get('image_url', HEART_IMG_PATH)
+                                if not image_url:
+                                    image_url = HEART_IMG_PATH
+                                item['thumbnail'] = image_url
+                                all_potential_candidates.append(item)
+                                country_candidates_selected_this_cycle.add(entry_id)
+                        else:
+                            logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
 
-                # This set tracks who from THIS country has already been added to all_potential_candidates in THIS cycle
-                # to avoid duplicates if a person appears multiple times in their country's CSV.
-                # It does NOT YET reflect what's in the global data_queue for this cycle.
-                country_candidates_selected_this_cycle = set()
+                logging.info(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.")
+                random.shuffle(all_potential_candidates)
 
-                for index, row in df_update.iterrows():
-                    if row.get('person_name'):
-                        item = row.to_dict()
-                        item['country_code'] = country_code_collect
+                items_added_to_global_queue_this_cycle = 0
+                for item_to_add in all_potential_candidates:
+                    current_item_country_code = item_to_add['country_code']
+                    current_entry_id = (item_to_add['person_name'], item_to_add.get('post_label') if item_to_add.get('post_label') is not None else "")
+                    if current_entry_id not in queued_entries_data[current_item_country_code]:
+                        data_queue.put(item_to_add)
+                        queued_entries_data[current_item_country_code].add(current_entry_id)
+                        logging.info(f"Added to queue: {item_to_add['person_name']} (Party: {item_to_add['party']}) from {current_item_country_code}")
+                        items_added_to_global_queue_this_cycle += 1
 
-                        if not item.get('party'):
-                            item['party'] = 'Other'
+                if items_added_to_global_queue_this_cycle > 0:
+                    logging.info(f"Added {items_added_to_global_queue_this_cycle} new items to the global data_queue this cycle.")
 
-                        item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
-                        entry_id = (item['person_name'], item_post_label)
+                # This is the new logging line that should be at the end of the try block
+                logging.info(f"Update_queue cycle complete. Current global queue size: {data_queue.qsize()}")
 
-                        if entry_id not in current_prayed_for_ids and \
-                           entry_id not in country_candidates_selected_this_cycle:
-
-                            image_url = item.get('image_url', HEART_IMG_PATH)
-                            if not image_url:
-                                image_url = HEART_IMG_PATH
-                            item['thumbnail'] = image_url
-
-                            all_potential_candidates.append(item)
-                            # logging.debug(f"Added potential candidate: {item['person_name']} from {country_code_collect}")
-                            country_candidates_selected_this_cycle.add(entry_id) # Mark as selected for this country in this cycle
-                    else:
-                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
-
-            logging.info(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.")
-
-            # Shuffle all collected candidates together for better mixing
-            random.shuffle(all_potential_candidates)
-
-            # Phase 2: Populate the global queue
-            # `queued_entries_data` is NOT cleared here. It persists across `update_queue` cycles
-            # and items are only removed from it by `process_item` when they are taken from `data_queue`.
-
-            items_added_to_global_queue_this_cycle = 0
-            for item_to_add in all_potential_candidates: # Renamed for clarity from the subtask description
-                current_item_country_code = item_to_add['country_code']
-                current_entry_id = (item_to_add['person_name'], item_to_add.get('post_label') if item_to_add.get('post_label') is not None else "")
-
-                # Re-confirm not in queued_entries_data before actual enqueuing.
-                # This check is against the persistent queued_entries_data.
-                if current_entry_id not in queued_entries_data[current_item_country_code]:
-                    data_queue.put(item_to_add)
-                    queued_entries_data[current_item_country_code].add(current_entry_id)
-                    logging.info(f"Added to queue: {item_to_add['person_name']} (Party: {item_to_add['party']}) from {current_item_country_code}")
-                    items_added_to_global_queue_this_cycle += 1
-                # else:
-                    # This item, though a candidate from CSV, is already reflected in queued_entries_data,
-                    # meaning it's already in data_queue from a previous cycle or added earlier in this one
-                    # (if all_potential_candidates somehow had true duplicates post-shuffle not caught by earlier country-specific set).
-                    # logging.debug(f"Item {current_entry_id} for {current_item_country_code} already in queued_entries_data. Skipping add to data_queue.")
-
-            if items_added_to_global_queue_this_cycle > 0:
-                 logging.info(f"Added {items_added_to_global_queue_this_cycle} new items to the global data_queue this cycle.")
-
-            logging.info(f"Update_queue cycle complete. Current global queue size: {data_queue.qsize()}")
             except Exception as e:
                 logging.error(f"Unexpected error in update_queue thread: {e}", exc_info=True)
+
             time.sleep(90)
 
 def read_log(country_code):
