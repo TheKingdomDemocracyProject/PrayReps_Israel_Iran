@@ -666,7 +666,8 @@ if __name__ == '__main__':
 
     try:
         # Run the Flask app with debug mode enabled
-        app.run(debug=True)
+        port = int(os.environ.get('PORT', 5000))
+        app.run(debug=True, host='0.0.0.0', port=port)
     except KeyboardInterrupt:
         print('You pressed Ctrl+C! Exiting gracefully...')
         sys.exit(0)
