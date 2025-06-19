@@ -1,3 +1,4 @@
+import logging
 import geopandas as gpd
 import pandas as pd
 import matplotlib
@@ -26,16 +27,30 @@ def load_post_label_mapping(post_label_mapping_path):
 
 # Load a random heart PNG image from the directory
 def load_random_heart_image():
-    heart_dir = 'static/heart_icons'
+    # APP_ROOT should already be defined at the global scope in hex_map.py
+    heart_dir = os.path.join(APP_ROOT, 'static/heart_icons')
+
+    if not os.path.isdir(heart_dir):
+        logging.error(f"Heart icons directory not found: {heart_dir}")
+        return None
+
     heart_pngs = [f for f in os.listdir(heart_dir) if f.endswith('.png')]
+    if not heart_pngs:
+        logging.error(f"No PNG images found in heart icons directory: {heart_dir}")
+        return None
     
-    # Select a random heart PNG file
     heart_png_path = os.path.join(heart_dir, random.choice(heart_pngs))
-    
-    # Load the image with PIL
-    heart_img = Image.open(heart_png_path).convert("RGBA")
-    heart_img.thumbnail((25, 25))  # Resize the image for better fit
-    return heart_img
+    logging.debug(f"Loading random heart image from: {heart_png_path}")
+    try:
+        heart_img = Image.open(heart_png_path).convert("RGBA")
+        heart_img.thumbnail((25, 25))  # Resize the image
+        return heart_img
+    except FileNotFoundError:
+        logging.error(f"Heart image file not found: {heart_png_path}")
+        return None
+    except Exception as e:
+        logging.error(f"Error loading heart image {heart_png_path}: {e}")
+        return None
 
 # Plot hex map with white fill color and light grey boundaries
 def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_items_list, queue_items_list, country_code):
@@ -79,9 +94,12 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                 if not location_geom.empty:
                     centroid = location_geom.geometry.centroid.iloc[0]
                     heart_img = load_random_heart_image()
-                    imagebox = OffsetImage(heart_img, zoom=0.6)
-                    ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
-                    ax.add_artist(ab)
+                    if heart_img: # Check if heart_img is not None
+                        imagebox = OffsetImage(heart_img, zoom=0.6)
+                        ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
+                        ax.add_artist(ab)
+                    else:
+                        logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
                 else:
                     logging.warning(f"Geometry not found for hex ID {hex_id_to_color} in {country_code}.")
         # Queue highlighting is not implemented for this strategy as per requirements.
@@ -106,9 +124,12 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                     if not location_geom.empty:
                         centroid = location_geom.geometry.centroid.iloc[0]
                         heart_img = load_random_heart_image()
-                        imagebox = OffsetImage(heart_img, zoom=0.6)
-                        ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
-                        ax.add_artist(ab)
+                        if heart_img: # Check if heart_img is not None
+                            imagebox = OffsetImage(heart_img, zoom=0.6)
+                            ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
+                            ax.add_artist(ab)
+                        else:
+                            logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
                     else:
                         logging.debug(f"No geometry found for location code {location_code} (from label {location_label}) in {country_code}.")
                 else:
@@ -220,7 +241,7 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
 
     plt.savefig(os.path.join(APP_ROOT, 'static/hex_map.png'), bbox_inches='tight', pad_inches=0.5, dpi=100)
     plt.close(fig)  # Close the plot to free memory
-import logging # Ensure logging is imported if not already
+# Ensure logging is imported if not already # This line is now redundant due to import at top
 
 # Example usage for Case 2
 if __name__ == "__main__":

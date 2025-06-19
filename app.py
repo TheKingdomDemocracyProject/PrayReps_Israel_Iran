@@ -78,7 +78,6 @@ party_info = {
 }
 
 data_queue = Queue.Queue()
-processed_items = [] # This seems unused in the provided snippets, consider removing later if confirmed.
 
 # Global data structures
 prayed_for_data = {country: [] for country in COUNTRIES_CONFIG.keys()}
