@@ -78,6 +78,7 @@ party_info = {
 }
 
 data_queue = Queue.Queue()
+logging.info(f"Global data_queue object created with id: {id(data_queue)}")
 
 # Global data structures
 prayed_for_data = {country: [] for country in COUNTRIES_CONFIG.keys()}
@@ -199,6 +200,7 @@ def update_queue():
         logging.info("Update_queue thread started.")
         while True:
             try:
+                logging.info(f"update_queue [cycle start]: using data_queue id: {id(data_queue)}, current size: {data_queue.qsize()}")
                 all_potential_candidates = []
                 # Phase 1: Collect all potential candidates from all countries
                 for country_code_collect in COUNTRIES_CONFIG.keys():
@@ -238,6 +240,7 @@ def update_queue():
                     current_item_country_code = item_to_add['country_code']
                     current_entry_id = (item_to_add['person_name'], item_to_add.get('post_label') if item_to_add.get('post_label') is not None else "")
                     if current_entry_id not in queued_entries_data[current_item_country_code]:
+                        logging.debug(f"update_queue [before put]: data_queue id: {id(data_queue)}")
                         data_queue.put(item_to_add)
                         queued_entries_data[current_item_country_code].add(current_entry_id)
                         logging.info(f"Added to queue: {item_to_add['person_name']} (Party: {item_to_add['party']}) from {current_item_country_code}")
@@ -280,7 +283,7 @@ def write_log(country_code):
 
 @app.route('/')
 def home():
-    logging.info(f"Entering home() route. Current data_queue size: {data_queue.qsize()}") # New log line
+    logging.info(f"home(): data_queue id: {id(data_queue)}, qsize: {data_queue.qsize()}, empty: {data_queue.empty()}")
     total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
     total_prayed_for_all_countries = sum(len(prayed_for_data[country]) for country in COUNTRIES_CONFIG.keys())
     current_remaining = total_all_countries - total_prayed_for_all_countries
@@ -376,6 +379,7 @@ def queue_page():
 
 @app.route('/queue/json')
 def get_queue_json():
+    logging.info(f"get_queue_json(): data_queue id: {id(data_queue)}, qsize: {data_queue.qsize()}, empty: {data_queue.empty()}")
     items = list(data_queue.queue)
     # Add country name to each item
     for item in items:
