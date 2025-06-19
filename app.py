@@ -280,6 +280,7 @@ def write_log(country_code):
 
 @app.route('/')
 def home():
+    logging.info(f"Entering home() route. Current data_queue size: {data_queue.qsize()}") # New log line
     total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
     total_prayed_for_all_countries = sum(len(prayed_for_data[country]) for country in COUNTRIES_CONFIG.keys())
     current_remaining = total_all_countries - total_prayed_for_all_countries
