@@ -131,8 +131,13 @@ def update_queue():
                 current_prayed_for_ids = {(item['person_name'], item.get('post_label','')) for item in prayed_for_data[country_code_update]}
                 df_update = df_update.sample(frac=1).reset_index(drop=True)
                 for index, row in df_update.iterrows():
-                    if row.get('person_name') and row.get('party'): # Basic check for essential data
+                    if row.get('person_name'): # Changed condition: only person_name is essential initially
                         item = row.to_dict()
+
+                        # Default party to 'Other' if missing or empty
+                        if not item.get('party'): # Handles None or empty string
+                            item['party'] = 'Other'
+
                         item['country_code'] = country_code_update # Tag item with its country
                         item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
                         entry_id = (item['person_name'], item_post_label)
@@ -145,9 +150,9 @@ def update_queue():
                             item['thumbnail'] = image_url
                             data_queue.put(item) # Global queue, items are tagged with country_code
                             queued_entries_data[country_code_update].add(entry_id)
-                            logging.info(f"Added to queue: {item['person_name']} from {country_code_update}")
+                            logging.info(f"Added to queue: {item['person_name']} (Party: {item['party']}) from {country_code_update}")
                     else:
-                        logging.debug(f"Skipped incomplete entry for {country_code_update} at index {index}: {row.to_dict()}")
+                        logging.debug(f"Skipped entry for {country_code_update} due to missing person_name at index {index}: {row.to_dict()}")
             logging.debug(f"Global queue size: {data_queue.qsize()}")
             time.sleep(90)  # Check all countries every 90 seconds
 
