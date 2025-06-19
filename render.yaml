@@ -4,7 +4,7 @@ services:
     env: python
     plan: free # optional; defaults to starter
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
+    startCommand: "gunicorn --workers 1 app:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0 # Replace with your desired Python version
