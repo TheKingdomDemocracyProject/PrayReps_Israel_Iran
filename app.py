@@ -190,10 +190,12 @@ def home():
     if map_to_display_country not in prayed_for_data or not prayed_for_data[map_to_display_country]:
         read_log(map_to_display_country) # Load if not already loaded or empty
 
-    if HEX_MAP_DATA_STORE.get(map_to_display_country) and POST_LABEL_MAPPINGS_STORE.get(map_to_display_country) is not None:
+    hex_map_gdf = HEX_MAP_DATA_STORE.get(map_to_display_country)
+    post_label_df = POST_LABEL_MAPPINGS_STORE.get(map_to_display_country)
+    if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
         # Pass the list of prayed items for the country, the global queue, and the country code
         plot_hex_map_with_hearts(
-            HEX_MAP_DATA_STORE[map_to_display_country],
+            hex_map_gdf, # Use the fetched GeoDataFrame
             POST_LABEL_MAPPINGS_STORE[map_to_display_country],
             prayed_for_data[map_to_display_country], # Pass the list of dicts
             list(data_queue.queue), # Pass the global queue list
@@ -259,11 +261,13 @@ def process_item():
         logging.info(f"Processed item: {item['person_name']} from {COUNTRIES_CONFIG[country_code_item]['name']}")
 
         # Plot map for the specific country
-        if HEX_MAP_DATA_STORE.get(country_code_item) and POST_LABEL_MAPPINGS_STORE.get(country_code_item) is not None:
+        hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_item)
+        post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_item)
+        if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
             # Pass the list of prayed items for the country, the global queue, and the country code
             plot_hex_map_with_hearts(
-                HEX_MAP_DATA_STORE[country_code_item],
-                POST_LABEL_MAPPINGS_STORE[country_code_item],
+                hex_map_gdf, # Use the fetched GeoDataFrame
+                post_label_df, # Use the fetched DataFrame
                 prayed_for_data[country_code_item], # Pass the list of dicts
                 list(data_queue.queue), # Pass the global queue list
                 country_code_item # Pass the country code
@@ -403,10 +407,12 @@ def purge_queue():
 
     # Reset map for the default/first country after purge
     default_country_purge = list(COUNTRIES_CONFIG.keys())[0]
-    if HEX_MAP_DATA_STORE.get(default_country_purge) and POST_LABEL_MAPPINGS_STORE.get(default_country_purge) is not None:
+    hex_map_gdf = HEX_MAP_DATA_STORE.get(default_country_purge)
+    post_label_df = POST_LABEL_MAPPINGS_STORE.get(default_country_purge)
+    if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
         plot_hex_map_with_hearts(
-            HEX_MAP_DATA_STORE[default_country_purge],
-            POST_LABEL_MAPPINGS_STORE[default_country_purge],
+            hex_map_gdf, # Use the fetched GeoDataFrame
+            post_label_df, # Use the fetched DataFrame
             [], # Empty list for prayed_for_items
             [], # Empty list for queue_items
             default_country_purge # Pass the default country code
@@ -468,10 +474,12 @@ def put_back_in_queue():
         write_log(country_code_form) # Write log for the specific country
 
         # Update hex map for the specific country
-        if HEX_MAP_DATA_STORE.get(country_code_form) and POST_LABEL_MAPPINGS_STORE.get(country_code_form) is not None:
+        hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_form)
+        post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_form)
+        if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
             plot_hex_map_with_hearts(
-                HEX_MAP_DATA_STORE[country_code_form],
-                POST_LABEL_MAPPINGS_STORE[country_code_form],
+                hex_map_gdf, # Use the fetched GeoDataFrame
+                post_label_df, # Use the fetched DataFrame
                 prayed_for_data[country_code_form],
                 list(data_queue.queue),
                 country_code_form
