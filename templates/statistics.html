@@ -2,24 +2,49 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Statistics</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const partyInfo = {{ party_info | tojson }};
+            const currentCountryCode = {{ country_code | tojson }};
+            const currentCountryName = {{ country_name | tojson }};
+            const partyInfoForCountry = {{ current_party_info | tojson }}; // This is party_info[country_code]
+            const allCountriesConfig = {{ all_countries | tojson }};
+
             const partyColors = {};
-            for (const fullName in partyInfo) {
-                if (partyInfo.hasOwnProperty(fullName)) {
-                    partyColors[partyInfo[fullName].short_name] = partyInfo[fullName].color;
+            // Build partyColors from partyInfoForCountry using short names as keys
+            for (const partyFullName in partyInfoForCountry) {
+                if (partyInfoForCountry.hasOwnProperty(partyFullName)) {
+                    partyColors[partyInfoForCountry[partyFullName].short_name] = partyInfoForCountry[partyFullName].color;
                 }
             }
+            // Ensure 'Other' color is present if 'Other' party exists in config
+            if (partyInfoForCountry['Other'] && !partyColors['Other']) {
+                 partyColors['Other'] = partyInfoForCountry['Other'].color;
+            } else if (!partyColors['Other']) {
+                partyColors['Other'] = '#CCCCCC'; // Generic fallback if 'Other' is not in specific country config
+            }
+
 
             async function fetchStatistics() {
-                const response = await fetch('/statistics/data');
+                if (currentCountryCode === 'overall') {
+                    document.getElementById('partyChart').style.display = 'none';
+                    const partyCountsDiv = document.querySelector('.party-counts');
+                    if (partyCountsDiv) {
+                        partyCountsDiv.style.display = 'none';
+                    }
+                    // Fetch overall data for other purposes if needed, or just return
+                    // const response = await fetch(`/statistics/data/overall`);
+                    // const data = await response.json();
+                    // console.log("Overall prayed count:", data.Overall);
+                    return;
+                }
+
+                const response = await fetch(`/statistics/data/${currentCountryCode}`);
                 const data = await response.json();
-                const sortedKeys = Object.keys(data).sort((a, b) => data[b] - data[a]);
+                const sortedKeys = Object.keys(data).sort((a, b) => data[b] - data[a]); // These keys are short_names
                 const sortedData = sortedKeys.map(key => data[key]);
 
                 const ctx = document.getElementById('partyChart').getContext('2d');
@@ -30,7 +55,7 @@
                         datasets: [{
                             label: 'People Prayed For',
                             data: sortedData,
-                            backgroundColor: sortedKeys.map(party => partyColors[party] || partyColors['Other']),
+                            backgroundColor: sortedKeys.map(shortName => partyColors[shortName] || partyColors['Other'] || '#CCCCCC'),
                         }]
                     },
                     options: {
@@ -51,30 +76,47 @@
             }
 
             async function fetchTimeData() {
-                const response = await fetch('/statistics/timedata');
+                const response = await fetch(`/statistics/timedata/${currentCountryCode}`);
                 const data = await response.json();
                 const ctx = document.getElementById('timeChart').getContext('2d');
 
-                const timeData = data.values.map((val, index) => ({
-                    x: new Date(data.timestamps[index]),
-                    y: index + 1,
-                    place: val.place,
-                    person: val.person,
-                    party: partyInfo[val.party]?.short_name || 'Other' // Convert full party name to short name
-                }));
+                const timeData = data.values.map((val, index) => {
+                    // val.party is the full party name from the log/backend
+                    // We need to find its corresponding short_name from partyInfoForCountry
+                    let shortPartyName = 'Other'; // Default to 'Other'
+                    for (const fullName in partyInfoForCountry) {
+                        if (fullName === val.party) {
+                            shortPartyName = partyInfoForCountry[fullName].short_name;
+                            break;
+                        }
+                    }
+                     // If val.party itself is 'Other' and not found directly, ensure shortPartyName is 'Other'
+                    if (val.party === 'Other' && !partyInfoForCountry[val.party]) {
+                        shortPartyName = 'Other';
+                    }
+
+
+                    return {
+                        x: new Date(data.timestamps[index]),
+                        y: index + 1,
+                        place: val.place,
+                        person: val.person,
+                        party: shortPartyName // Use the derived short name
+                    };
+                });
 
                 new Chart(ctx, {
                     type: 'line',
                     data: {
                         datasets: [{
                             label: 'Prayer Times',
-                            data: timeData,
+                            data: timeData, // timeData now has short party names
                             borderColor: '#4e73df',
                             backgroundColor: 'rgba(78, 115, 223, 0.05)',
-                            pointBackgroundColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
-                            pointBorderColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
-                            pointHoverBackgroundColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
-                            pointHoverBorderColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
+                            pointBackgroundColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointBorderColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointHoverBackgroundColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointHoverBorderColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
                             fill: true,
                             tension: 0.4
                         }]
@@ -102,7 +144,12 @@
                             tooltip: {
                                 callbacks: {
                                     label: function(tooltipItem) {
-                                        return `${tooltipItem.raw.person} - ${tooltipItem.raw.place}`;
+                                        if (currentCountryCode === 'overall') {
+                                            // Ensure tooltipItem.raw.country exists from the data processing for overall
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'} (${tooltipItem.raw.country || 'N/A'})`;
+                                        } else {
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'}`;
+                                        }
                                     }
                                 }
                             },
@@ -121,18 +168,29 @@
 </head>
 <body>
     <div class="statscontent">
+        <h1>Statistics for {{ country_name }}</h1>
         <div class="links">
-            <a href="/">Back to Main</a>
-            <a href="/queue">View Queue</a>
-			 <a href="/prayed">View Prayed Constituencies</a>
+            <a href="{{ url_for('home') }}">Back to Main</a>
+            <a href="{{ url_for('queue_page') }}">View Queue</a>
+			<a href="{{ url_for('prayed_list', country_code=country_code) }}">View prayed for representatives for {{ country_name }}</a>
+        </div>
+        <div class="country-switch-links">
+            Switch to:
+            <a href="{{ url_for('statistics_overall') }}">Overall Statistics</a>
+            {% for code, config in all_countries.items() %}
+                {% if code != country_code %}  {# Optionally hide link to current country view #}
+                    <a href="{{ url_for('statistics', country_code=code) }}">{{ config.name }} Statistics</a>
+                {% endif %}
+            {% endfor %}
         </div>
         <div class="statistics">
             <canvas id="timeChart"></canvas>
         </div>
         <div class="party-counts">
-            {% for party, count in sorted_party_counts %}
-            <div class="party-block {{ party | lower | replace(' ', '-') | replace('&', 'and') }}">
-                {{ party }}: {{ count }}
+            {% for party_short_name, count in sorted_party_counts %}
+            {# party_short_name is already the short name from app.py context #}
+            <div class="party-block {{ party_short_name | lower | replace(' ', '-') | replace('&', 'and') }}">
+                {{ party_short_name }}: {{ count }}
             </div>
             {% endfor %}
         </div>

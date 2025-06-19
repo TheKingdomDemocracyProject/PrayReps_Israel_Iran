@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Praying in the new Parliament</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <h1 class="main-title">Praying for elected representatives around the world</h1>
     <div class="queue-info">
         <div>Representatives left to pray for: <span id="remaining">{{ remaining }}</span></div>
         <div>Representatives waiting for prayer: <span id="queue_size">{{ queue|length }}</span></div>
@@ -25,12 +26,20 @@
     </div>
     <ul id="queue_list"></ul>
     <div class="links">
-        <a href="/prayed">View Prayed Constituencies</a>
-        <a href="/queue">View Queue</a>
-        <a href="/statistics">View Statistics</a>
+        {# Ensure default_country_code is available, or fallback to the first key from all_countries if COUNTRIES_CONFIG is not empty #}
+        {# {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %} #}
+
+        {# Always show overall links, and specific country links if a default is available #}
+        <a href="{{ url_for('prayed_list_overall') }}">View prayed for representatives</a>
+        <a href="{{ url_for('statistics_overall') }}">View Statistics</a>
+        <a href="{{ url_for('queue_page') }}">View Full Queue</a>
     </div>
     <script>
-        let processedCount = {{ 491 - remaining }};
+        const allCountriesConfig = {{ all_countries | tojson }};
+        let processedCount = {{ (all_countries.values() | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
+        const totalRepresentativesAllCountries = {{ (all_countries.values() | sum(attribute='total_representatives')) }};
+        let currently_displayed_map_country_code = {{ initial_map_country_code | tojson }};
+
 
         function updateQueueInfo() {
             console.log('Fetching queue data...');
@@ -47,24 +56,58 @@
                         document.getElementById('queue_size').innerText = data.length;
                         if (data.length > 0) {
                             const current = data[0];
+                            const new_person_country_code = current.country_code; // Use a distinct name for clarity
+                            const countryName = (allCountriesConfig && allCountriesConfig[new_person_country_code]) ? allCountriesConfig[new_person_country_code].name : 'Unknown Country';
+
+                            let representativeText = '';
+                            if (!current.place || current.place === 'N/A' || current.place.trim() === '') {
+                                representativeText = `Praying for <span id="personName">${current.person_name}</span> who serves ${countryName}`;
+                            } else {
+                                representativeText = `Praying for <span id="personName">${current.person_name}</span> from ${countryName} representing <span id="constituency">${current.place}</span>`;
+                            }
+
                             document.getElementById('current-constituency').innerHTML = `
                                 <div class="profile">
                                     <div class="profile-image-container">
                                         <img id="profileImage" src="${current.thumbnail}" alt="Profile image of ${current.person_name}">
                                     </div>
                                     <div class="profile-text">
-                                        <span id="personName">${current.person_name}</span>
-                                        is elected to serve
-                                        <span id="constituency">${current.place}</span>
+                                        ${representativeText}
                                     </div>
                                 </div>
                             `;
+
+                            if (new_person_country_code && new_person_country_code !== currently_displayed_map_country_code) {
+                                console.log(`Current person's country (${new_person_country_code}) differs from displayed map (${currently_displayed_map_country_code}). Fetching new map.`);
+                                fetch(`/generate_map_for_country/${new_person_country_code}`)
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            throw new Error(`Failed to generate map for ${new_person_country_code}: ${response.statusText}`);
+                                        }
+                                        return response.json();
+                                    })
+                                    .then(map_gen_response => {
+                                        console.log(map_gen_response.status || 'Map generation triggered.');
+                                        reloadHexMap();
+                                        currently_displayed_map_country_code = new_person_country_code;
+                                    })
+                                    .catch(error => {
+                                        console.error('Error updating map for new country:', error);
+                                    });
+                            } else {
+                                // Country is the same, or no new person, but still reload map if queue changed.
+                                // This ensures highlight updates if top person of same country changes.
+                                reloadHexMap();
+                            }
                             document.getElementById('next-button').style.display = 'block';
                         } else {
-                            document.getElementById('current-constituency').innerText = 'Waiting for results. Stay tuned!';
+                            document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
                             document.getElementById('next-button').style.display = 'none';
+                            // Optional: if queue is empty, maybe revert to a default map or clear it?
+                            // For now, it keeps showing the last map.
+                            reloadHexMap(); // Reload to ensure map is up-to-date (e.g. no highlight if queue empty)
                         }
-                        reloadHexMap();
+                        // reloadHexMap(); // This was the original position, moved up for clarity
                     } else {
                         console.error('Unexpected data format:', data);
                     }
@@ -87,8 +130,16 @@
         function nextConstituency() {
             fetch('/process_item', { method: 'POST' })
                 .then(() => {
-                    processedCount++;
-                    document.getElementById('remaining').innerText = 491 - processedCount;
+                    processedCount++; // Increment local count of processed items
+                    // The 'remaining' is now globally calculated in app.py and passed to the template.
+                    // We should fetch the updated global remaining count, or update it based on current item processing.
+                    // For simplicity, let's decrement the total displayed remaining count.
+                    // A more robust solution would be to get the new 'remaining' from the server.
+                    const remainingElement = document.getElementById('remaining');
+                    let currentRemaining = parseInt(remainingElement.innerText);
+                    if (!isNaN(currentRemaining)) {
+                        remainingElement.innerText = Math.max(0, currentRemaining - 1);
+                    }
                     updateQueueInfo();
                 })
                 .catch(error => {
@@ -97,11 +148,18 @@
         }
 
         function purgeQueue() {
-            fetch('/purge', { method: 'POST' })
-                .then(() => {
-                    updateQueueInfo();
-                    processedCount = 0;
-                    document.getElementById('remaining').innerText = 491;
+            fetch('/purge', { method: 'POST' }) // Assuming GET for purge as per app.py, if POST, keep as is.
+                                                // The instruction for app.py had /purge as GET.
+                .then(response => {
+                    if(response.ok) {
+                        // Update UI after successful purge
+                        processedCount = 0;
+                        document.getElementById('remaining').innerText = totalRepresentativesAllCountries; // Reset to total
+                        updateQueueInfo(); // This will refresh the queue display (should be empty)
+                                           // and current-constituency message.
+                    } else {
+                        console.error('Purge request failed');
+                    }
                 })
                 .catch(error => {
                     console.error('Error purging queue:', error);
