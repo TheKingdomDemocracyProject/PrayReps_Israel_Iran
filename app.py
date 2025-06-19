@@ -23,7 +23,7 @@ COUNTRIES_CONFIG = {
         'csv_path': 'data/20221101_israel.csv',
         'geojson_path': 'data/ISR_Parliament_120.geojson',
         'map_shape_path': 'data/ISR_Parliament_120.geojson',
-        'post_label_mapping_path': 'data/post_label to 3CODE.csv',
+        'post_label_mapping_path': None,
         'total_representatives': 120,
         'log_file': 'prayed_for_israel.json',
         'name': 'Israel'
@@ -32,7 +32,7 @@ COUNTRIES_CONFIG = {
         'csv_path': 'data/20240510_iran.csv',
         'geojson_path': 'data/IRN_IslamicParliamentofIran_290_v2.geojson',
         'map_shape_path': 'data/IRN_IslamicParliamentofIran_290_v2.geojson',
-        'post_label_mapping_path': 'data/post_label to 3CODE.csv',
+        'post_label_mapping_path': None,
         'total_representatives': 290,
         'log_file': 'prayed_for_iran.json',
         'name': 'Iran'
@@ -103,7 +103,7 @@ def process_deputies(csv_data, country_code):
         image_url = row.get('image_url')
         processed_row = row.to_dict()
         if not image_url:
-            logging.debug(f"No image URL for {row.get('person_name')} ({country_code}) at index {index}")
+            # logging.debug(f"No image URL for {row.get('person_name')} ({country_code}) at index {index}") # Removed as per subtask
             country_deputies_without_images.append(processed_row)
             continue
         processed_row['Image'] = image_url
@@ -515,12 +515,15 @@ if __name__ == '__main__':
             HEX_MAP_DATA_STORE[country_code_init] = None # Ensure key exists
 
         # Load post label mapping data
-        post_label_path = COUNTRIES_CONFIG[country_code_init]['post_label_mapping_path']
-        if os.path.exists(post_label_path):
+        post_label_path = COUNTRIES_CONFIG[country_code_init].get('post_label_mapping_path') # Use .get() for safety
+        if post_label_path and os.path.exists(post_label_path):
             POST_LABEL_MAPPINGS_STORE[country_code_init] = load_post_label_mapping(post_label_path)
-        else:
+        elif post_label_path:  # Only log error if a path was actually specified but not found
             logging.error(f"Post label mapping file not found: {post_label_path} for country {country_code_init}")
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame() # Ensure key exists
+            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()  # Assign empty DataFrame
+        else:  # Path is None or empty
+            logging.info(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.")
+            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()  # Assign empty DataFrame for None path
 
     # Start the queue updating thread
     threading.Thread(target=update_queue, daemon=True).start()

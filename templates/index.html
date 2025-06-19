@@ -39,8 +39,8 @@
     </div>
     <script>
         const allCountriesConfig = {{ all_countries | tojson }};
-        let processedCount = {{ (all_countries | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
-        const totalRepresentativesAllCountries = {{ all_countries | sum(attribute='total_representatives') }};
+        let processedCount = {{ (all_countries.values() | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
+        const totalRepresentativesAllCountries = {{ (all_countries.values() | sum(attribute='total_representatives')) }};
 
 
         function updateQueueInfo() {
