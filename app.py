@@ -11,6 +11,7 @@ import sys
 # from io import StringIO # No longer needed as fetch_csv reads local files
 import numpy as np
 import os
+import random
 
 from hex_map import load_hex_map, load_post_label_mapping, plot_hex_map_with_hearts
 from utils import format_pretty_timestamp
@@ -122,39 +123,79 @@ def process_deputies(csv_data, country_code):
 def update_queue():
     with app.app_context():
         while True:
-            for country_code_update in COUNTRIES_CONFIG.keys():
-                df_update = fetch_csv(country_code_update)
-                if df_update.empty:
-                    logging.warning(f"Skipping update for {country_code_update} as DataFrame is empty.")
-                    continue
-                # Use country-specific prayed_for_data and queued_entries_data
-                current_prayed_for_ids = {(item['person_name'], item.get('post_label','')) for item in prayed_for_data[country_code_update]}
-                df_update = df_update.sample(frac=1).reset_index(drop=True)
-                for index, row in df_update.iterrows():
-                    if row.get('person_name'): # Changed condition: only person_name is essential initially
-                        item = row.to_dict()
+            all_potential_candidates = []
 
-                        # Default party to 'Other' if missing or empty
-                        if not item.get('party'): # Handles None or empty string
+            # Phase 1: Collect all potential candidates from all countries
+            for country_code_collect in COUNTRIES_CONFIG.keys():
+                df_update = fetch_csv(country_code_collect)
+                if df_update.empty:
+                    logging.debug(f"No CSV data for {country_code_collect} in this cycle.")
+                    continue
+
+                df_update = df_update.sample(frac=1).reset_index(drop=True)
+                current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
+
+                # This set tracks who from THIS country has already been added to all_potential_candidates in THIS cycle
+                # to avoid duplicates if a person appears multiple times in their country's CSV.
+                # It does NOT YET reflect what's in the global data_queue for this cycle.
+                country_candidates_selected_this_cycle = set()
+
+                for index, row in df_update.iterrows():
+                    if row.get('person_name'):
+                        item = row.to_dict()
+                        item['country_code'] = country_code_collect
+
+                        if not item.get('party'):
                             item['party'] = 'Other'
 
-                        item['country_code'] = country_code_update # Tag item with its country
                         item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
                         entry_id = (item['person_name'], item_post_label)
 
-                        # Use country-specific queued_entries_data
-                        if entry_id not in current_prayed_for_ids and entry_id not in queued_entries_data[country_code_update]:
-                            image_url = item.get('image_url', HEART_IMG_PATH) # Use global HEART_IMG_PATH
-                            if not image_url: # Ensure there's a fallback
+                        if entry_id not in current_prayed_for_ids and \
+                           entry_id not in country_candidates_selected_this_cycle:
+
+                            image_url = item.get('image_url', HEART_IMG_PATH)
+                            if not image_url:
                                 image_url = HEART_IMG_PATH
                             item['thumbnail'] = image_url
-                            data_queue.put(item) # Global queue, items are tagged with country_code
-                            queued_entries_data[country_code_update].add(entry_id)
-                            logging.info(f"Added to queue: {item['person_name']} (Party: {item['party']}) from {country_code_update}")
+
+                            all_potential_candidates.append(item)
+                            country_candidates_selected_this_cycle.add(entry_id) # Mark as selected for this country in this cycle
                     else:
-                        logging.debug(f"Skipped entry for {country_code_update} due to missing person_name at index {index}: {row.to_dict()}")
-            logging.debug(f"Global queue size: {data_queue.qsize()}")
-            time.sleep(90)  # Check all countries every 90 seconds
+                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
+
+            logging.info(f"Collected {len(all_potential_candidates)} potential new candidates from all countries.")
+
+            # Shuffle all collected candidates together for better mixing
+            random.shuffle(all_potential_candidates)
+
+            # Phase 2: Populate the global queue
+            # `queued_entries_data` is NOT cleared here. It persists across `update_queue` cycles
+            # and items are only removed from it by `process_item` when they are taken from `data_queue`.
+
+            items_added_to_global_queue_this_cycle = 0
+            for item_to_add in all_potential_candidates: # Renamed for clarity from the subtask description
+                current_item_country_code = item_to_add['country_code']
+                current_entry_id = (item_to_add['person_name'], item_to_add.get('post_label') if item_to_add.get('post_label') is not None else "")
+
+                # Re-confirm not in queued_entries_data before actual enqueuing.
+                # This check is against the persistent queued_entries_data.
+                if current_entry_id not in queued_entries_data[current_item_country_code]:
+                    data_queue.put(item_to_add)
+                    queued_entries_data[current_item_country_code].add(current_entry_id)
+                    logging.info(f"Added to queue: {item_to_add['person_name']} (Party: {item_to_add['party']}) from {current_item_country_code}")
+                    items_added_to_global_queue_this_cycle += 1
+                # else:
+                    # This item, though a candidate from CSV, is already reflected in queued_entries_data,
+                    # meaning it's already in data_queue from a previous cycle or added earlier in this one
+                    # (if all_potential_candidates somehow had true duplicates post-shuffle not caught by earlier country-specific set).
+                    # logging.debug(f"Item {current_entry_id} for {current_item_country_code} already in queued_entries_data. Skipping add to data_queue.")
+
+            if items_added_to_global_queue_this_cycle > 0:
+                 logging.info(f"Added {items_added_to_global_queue_this_cycle} new items to the global queue after shuffling.")
+
+            logging.debug(f"Global queue size after update cycle: {data_queue.qsize()}")
+            time.sleep(90)
 
 def read_log(country_code):
     log_file_path = COUNTRIES_CONFIG[country_code]['log_file']
@@ -390,6 +431,71 @@ def prayed_list(country_code):
                            country_code=country_code,
                            country_name=COUNTRIES_CONFIG[country_code]['name'],
                            all_countries=COUNTRIES_CONFIG)
+
+# Routes for Overall Statistics
+@app.route('/statistics/overall')
+def statistics_overall():
+    return render_template('statistics.html',
+                           country_code='overall',
+                           country_name='Overall',
+                           sorted_party_counts={}, # No specific party breakdown for overall
+                           current_party_info={},    # No specific party info for overall
+                           all_countries=COUNTRIES_CONFIG)
+
+@app.route('/statistics/data/overall')
+def statistics_data_overall():
+    total_prayed_count = sum(len(prayed_list) for prayed_list in prayed_for_data.values())
+    return jsonify({'Overall': total_prayed_count})
+
+@app.route('/statistics/timedata/overall')
+def statistics_timedata_overall():
+    all_prayed_items = []
+    for country_items in prayed_for_data.values():
+        all_prayed_items.extend(country_items)
+
+    # Sort by timestamp - ensure items have 'timestamp' and it's comparable
+    # It's good practice to handle items that might be missing 'timestamp' if that's possible
+    all_prayed_items.sort(key=lambda x: x.get('timestamp', ''))
+
+    timestamps = []
+    values = []
+    for item in all_prayed_items:
+        if item.get('timestamp'): # Ensure timestamp exists before adding
+            timestamps.append(item.get('timestamp'))
+            values.append({
+                'place': item.get('post_label'), # Changed from 'place' to 'post_label' for consistency
+                'person': item.get('person_name'),
+                'country': COUNTRIES_CONFIG[item['country_code']]['name'] if item.get('country_code') in COUNTRIES_CONFIG else 'Unknown'
+                # Party is intentionally omitted for the overall timedata view
+            })
+    return jsonify({'timestamps': timestamps, 'values': values, 'country_name': 'Overall'})
+
+# Route for Overall Prayed List
+@app.route('/prayed/overall')
+def prayed_list_overall():
+    overall_prayed_list_display = []
+    for country_code, items_list in prayed_for_data.items():
+        for item in items_list:
+            display_item = item.copy()
+            # Ensure country_code from item is valid before accessing COUNTRIES_CONFIG
+            item_country_code = display_item.get('country_code')
+            if item_country_code and item_country_code in COUNTRIES_CONFIG:
+                 display_item['country_name_display'] = COUNTRIES_CONFIG[item_country_code]['name']
+            else:
+                 display_item['country_name_display'] = 'Unknown Country' # Fallback
+            display_item['formatted_timestamp'] = format_pretty_timestamp(item.get('timestamp'))
+            # Party class/color not added as it's an overall list; template would need to handle this
+            overall_prayed_list_display.append(display_item)
+
+    # Sort by timestamp, most recent first
+    overall_prayed_list_display.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+
+    return render_template('prayed.html',
+                           prayed_for_list=overall_prayed_list_display,
+                           country_code='overall',
+                           country_name='Overall',
+                           all_countries=COUNTRIES_CONFIG,
+                           current_party_info={}) # No specific party context for overall
 
 
 @app.route('/purge')

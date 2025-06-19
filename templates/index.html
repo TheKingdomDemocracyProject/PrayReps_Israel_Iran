@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Praying in the new Parliament</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <h1 class="main-title">Praying for elected representatives around the world</h1>
     <div class="queue-info">
         <div>Representatives left to pray for: <span id="remaining">{{ remaining }}</span></div>
         <div>Representatives waiting for prayer: <span id="queue_size">{{ queue|length }}</span></div>
@@ -29,10 +30,10 @@
         {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %}
 
         {% if display_country_code %}
-            <a href="{{ url_for('prayed_list', country_code=display_country_code) }}">View Prayed Constituencies ({{ all_countries[display_country_code].name }})</a>
+            <a href="{{ url_for('prayed_list', country_code=display_country_code) }}">View prayed for representatives ({{ all_countries[display_country_code].name }})</a>
             <a href="{{ url_for('statistics', country_code=display_country_code) }}">View Statistics ({{ all_countries[display_country_code].name }})</a>
         {% else %}
-            <a href="#">View Prayed Constituencies (No countries configured)</a>
+            <a href="#">View prayed for representatives (No countries configured)</a>
             <a href="#">View Statistics (No countries configured)</a>
         {% endif %}
         <a href="{{ url_for('queue_page') }}">View Full Queue</a>
@@ -61,14 +62,20 @@
                             const countryCode = current.country_code;
                             const countryName = (allCountriesConfig && allCountriesConfig[countryCode]) ? allCountriesConfig[countryCode].name : 'Unknown Country';
 
+                            let representativeText = '';
+                            if (!current.place || current.place === 'N/A' || current.place.trim() === '') {
+                                representativeText = `Praying for <span id="personName">${current.person_name}</span> who serves ${countryName}`;
+                            } else {
+                                representativeText = `Praying for <span id="personName">${current.person_name}</span> from ${countryName} representing <span id="constituency">${current.place}</span>`;
+                            }
+
                             document.getElementById('current-constituency').innerHTML = `
                                 <div class="profile">
                                     <div class="profile-image-container">
                                         <img id="profileImage" src="${current.thumbnail}" alt="Profile image of ${current.person_name}">
                                     </div>
                                     <div class="profile-text">
-                                        Praying for <span id="personName">${current.person_name}</span> from ${countryName}
-                                        representing <span id="constituency">${current.place || 'N/A'}</span> (${current.party || 'N/A'})
+                                        ${representativeText}
                                     </div>
                                 </div>
                             `;

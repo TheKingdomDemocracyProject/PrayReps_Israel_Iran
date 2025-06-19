@@ -263,6 +263,11 @@ body {
     border-radius: 5px;
 }
 .hex-map {
-    width: 500px;  /* Set the desired width */
-    height: auto;  /* Maintain aspect ratio */
+    max-width: 100%;      /* Ensures the map shrinks to fit container width if necessary */
+    max-height: 630px;    /* Sets the maximum display height */
+    width: auto;          /* Maintains aspect ratio when height is constrained */
+    height: auto;         /* Maintains aspect ratio when width is constrained */
+    display: block;       /* Allows for margin auto centering */
+    margin-left: auto;
+    margin-right: auto;
 }

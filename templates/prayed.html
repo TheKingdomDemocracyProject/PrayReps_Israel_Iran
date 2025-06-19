@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Prayed List for {{ country_name }}</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -16,28 +16,36 @@
         </div>
         <div class="country-switch-links">
             Switch to:
+            <a href="{{ url_for('prayed_list_overall') }}">Overall Prayed List</a>
             {% for code, config in all_countries.items() %}
-                {% if code != country_code %}
-                    <a href="{{ url_for('prayed_list', country_code=code) }}">{{ config.name }} Prayed List</a>
+                {% if code != country_code %} {# Optionally hide link to current view if it's a specific country #}
+                    <a href="{{ url_for('prayed_list', country_code=code) }}">{{ config.name }} prayed for representatives</a>
                 {% endif %}
             {% endfor %}
         </div>
         <div class="prayed-list">
             {% for item in prayed_for_list %}
-            <div class="prayed-item">
+            <div class="prayed-item" style="border-left: 5px solid {{ item.party_color if item.party_color else '#A9A9A9' }}; padding-left: 10px;">
                 <span>
-                    <span class="highlight {{ item.party_class }}" data-party-color="{{ item.party_color }}" title="{{ item.party }}">{{ item.person_name }}</span>
+                    <span class="highlight {{ item.party_class if item.party_class else 'party-other-overall' }}"
+                          data-party-color="{{ item.party_color if item.party_color else '#A9A9A9' }}"
+                          title="{{ item.party if item.party else 'N/A' }}">{{ item.person_name }}</span>
                     {% if item.post_label and item.post_label != "" %}
                         from {{ item.post_label }}
                     {% endif %}
+                    {% if country_code == 'overall' and item.country_name_display %}
+                        ({{ item.country_name_display }})
+                    {% endif %}
                     was prayed for {{ item.formatted_timestamp }}.
                 </span>
-                <form method="POST" action="{{ url_for('put_back_in_queue') }}" style="display: inline;">
-                    <input type="hidden" name="person_name" value="{{ item.person_name }}">
-                    <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
-                    <input type="hidden" name="country_code" value="{{ country_code }}">
-                    <button type="submit">Put Back in Queue</button>
-                </form>
+                {% if country_code != 'overall' %}
+                    <form method="POST" action="{{ url_for('put_back_in_queue') }}" style="display: inline;">
+                        <input type="hidden" name="person_name" value="{{ item.person_name }}">
+                        <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
+                        <input type="hidden" name="country_code" value="{{ country_code }}"> {# This should be item.country_code if on overall page, but overall hides this form #}
+                        <button type="submit">Put Back in Queue</button>
+                    </form>
+                {% endif %}
             </div>
             {% else %}
             <p>No items have been prayed for in {{ country_name }} yet.</p>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Prayer Queue (All Countries)</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -13,7 +13,7 @@
             {# Assuming default_country_code logic similar to index.html for these links if needed #}
             {# Or link to a generic /prayed and /statistics landing page if those exist #}
             {# For now, let's make them simple, assuming user can navigate from there #}
-            <a href="{{ url_for('prayed_list') }}">View Prayed Lists</a>
+            <a href="{{ url_for('prayed_list') }}">View prayed for representatives</a>
             <a href="{{ url_for('statistics') }}">View Statistics</a>
         </div>
         <div class="queue-list">

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Statistics</title>
+    <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -29,6 +29,19 @@
 
 
             async function fetchStatistics() {
+                if (currentCountryCode === 'overall') {
+                    document.getElementById('partyChart').style.display = 'none';
+                    const partyCountsDiv = document.querySelector('.party-counts');
+                    if (partyCountsDiv) {
+                        partyCountsDiv.style.display = 'none';
+                    }
+                    // Fetch overall data for other purposes if needed, or just return
+                    // const response = await fetch(`/statistics/data/overall`);
+                    // const data = await response.json();
+                    // console.log("Overall prayed count:", data.Overall);
+                    return;
+                }
+
                 const response = await fetch(`/statistics/data/${currentCountryCode}`);
                 const data = await response.json();
                 const sortedKeys = Object.keys(data).sort((a, b) => data[b] - data[a]); // These keys are short_names
@@ -42,7 +55,7 @@
                         datasets: [{
                             label: 'People Prayed For',
                             data: sortedData,
-                            backgroundColor: sortedKeys.map(shortName => partyColors[shortName] || partyColors['Other']),
+                            backgroundColor: sortedKeys.map(shortName => partyColors[shortName] || partyColors['Other'] || '#CCCCCC'),
                         }]
                     },
                     options: {
@@ -100,10 +113,10 @@
                             data: timeData, // timeData now has short party names
                             borderColor: '#4e73df',
                             backgroundColor: 'rgba(78, 115, 223, 0.05)',
-                            pointBackgroundColor: timeData.map(point => partyColors[point.party] || partyColors['Other']), // point.party is now short name
-                            pointBorderColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
-                            pointHoverBackgroundColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
-                            pointHoverBorderColor: timeData.map(point => partyColors[point.party] || partyColors['Other']),
+                            pointBackgroundColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointBorderColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointHoverBackgroundColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                            pointHoverBorderColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
                             fill: true,
                             tension: 0.4
                         }]
@@ -131,7 +144,12 @@
                             tooltip: {
                                 callbacks: {
                                     label: function(tooltipItem) {
-                                        return `${tooltipItem.raw.person} - ${tooltipItem.raw.place}`;
+                                        if (currentCountryCode === 'overall') {
+                                            // Ensure tooltipItem.raw.country exists from the data processing for overall
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'} (${tooltipItem.raw.country || 'N/A'})`;
+                                        } else {
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'}`;
+                                        }
                                     }
                                 }
                             },
@@ -154,12 +172,13 @@
         <div class="links">
             <a href="{{ url_for('home') }}">Back to Main</a>
             <a href="{{ url_for('queue_page') }}">View Queue</a>
-			<a href="{{ url_for('prayed_list', country=country_code) }}">View Prayed List for {{ country_name }}</a>
+			<a href="{{ url_for('prayed_list', country_code=country_code) }}">View prayed for representatives for {{ country_name }}</a>
         </div>
         <div class="country-switch-links">
             Switch to:
+            <a href="{{ url_for('statistics_overall') }}">Overall Statistics</a>
             {% for code, config in all_countries.items() %}
-                {% if code != country_code %}
+                {% if code != country_code %}  {# Optionally hide link to current country view #}
                     <a href="{{ url_for('statistics', country_code=code) }}">{{ config.name }} Statistics</a>
                 {% endif %}
             {% endfor %}
