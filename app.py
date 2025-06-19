@@ -18,6 +18,17 @@ from utils import format_pretty_timestamp
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(APP_ROOT, 'data', 'logs')
+os.makedirs(LOG_DIR, exist_ok=True) # Create log directory immediately
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
+    logging.FileHandler(os.path.join(LOG_DIR, "app.log")),
+    logging.StreamHandler()
+])
+
+# Log path initializations (optional but good for debugging)
+logging.info(f"APP_ROOT set to: {APP_ROOT}")
+logging.info(f"LOG_DIR set to: {LOG_DIR} (created if didn't exist).")
 
 app = Flask(__name__)
 
@@ -81,12 +92,6 @@ POST_LABEL_MAPPINGS_STORE = {}
 
 # Old global paths and direct loads are removed as they are now per-country
 # heart_img_path remains global as specified.
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
-    logging.FileHandler(os.path.join(LOG_DIR, "app.log")),
-    logging.StreamHandler()
-])
 
 # Function to fetch the CSV
 def fetch_csv(country_code):
@@ -632,9 +637,6 @@ def put_back_in_queue():
 
 
 if __name__ == '__main__':
-    os.makedirs(LOG_DIR, exist_ok=True)
-    logging.info(f"APP_ROOT set to: {APP_ROOT}")
-    logging.info(f"LOG_DIR set to: {LOG_DIR}. Log directory created if it didn't exist.")
     # Initial Data Loading
     for country_code_init in COUNTRIES_CONFIG.keys():
         logging.info(f"Initializing data for country: {country_code_init}")
