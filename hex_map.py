@@ -32,7 +32,7 @@ def load_random_heart_image():
     
     # Load the image with PIL
     heart_img = Image.open(heart_png_path).convert("RGBA")
-    heart_img.thumbnail((50, 50))  # Resize the image for better fit
+    heart_img.thumbnail((25, 25))  # Resize the image for better fit
     return heart_img
 
 # Plot hex map with white fill color and light grey boundaries
