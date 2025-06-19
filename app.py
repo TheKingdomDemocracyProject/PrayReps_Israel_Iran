@@ -258,8 +258,34 @@ def home():
                            deputies_without_images=display_deputies_without_images,
                            current_country_name=COUNTRIES_CONFIG[map_to_display_country]['name'],
                            all_countries=COUNTRIES_CONFIG, # Pass all country configs
-                           default_country_code=default_country_code # Pass default country code for links
+                           default_country_code=default_country_code, # Pass default country code for links
+                           initial_map_country_code=map_to_display_country # Pass current map country for JS
                            )
+
+@app.route('/generate_map_for_country/<country_code>')
+def generate_map_for_country(country_code):
+    if country_code not in COUNTRIES_CONFIG:
+        logging.error(f"Invalid country code '{country_code}' for map generation.")
+        return jsonify(error='Invalid country code'), 404
+
+    # Ensure logs are read for the country before plotting, as prayed_for_data is used
+    if country_code not in prayed_for_data or not prayed_for_data[country_code]:
+        read_log(country_code)
+
+    hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code)
+    post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code)
+    prayed_list_for_map = prayed_for_data.get(country_code, [])
+    current_queue_for_map = list(data_queue.queue)
+
+    if hex_map_gdf is None or hex_map_gdf.empty : # Check for None or empty GeoDataFrame
+        logging.error(f"Map data (GeoDataFrame) not available for {country_code} in generate_map_for_country.")
+        return jsonify(error=f'Map data not available for {country_code}'), 500
+    # post_label_df can be None or empty for random allocation countries, plot_hex_map_with_hearts handles this.
+
+    logging.info(f"Generating map for country: {country_code} on demand.")
+    plot_hex_map_with_hearts(hex_map_gdf, post_label_df, prayed_list_for_map, current_queue_for_map, country_code)
+
+    return jsonify(status=f'Map generated for {country_code}'), 200
 
 
 @app.route('/queue')
@@ -537,64 +563,66 @@ def refresh_data():
 def put_back_in_queue():
     person_name = request.form.get('person_name')
     post_label_form = request.form.get('post_label')
-    # country_code_form is crucial to identify which country's list to modify
-    country_code_form = request.form.get('country_code')
+    item_country_code_from_form = request.form.get('country_code')
 
-    if not country_code_form or country_code_form not in COUNTRIES_CONFIG:
-        logging.error(f"Invalid or missing country_code '{country_code_form}' in put_back request.")
-        # Redirect to prayed_list, maybe with an error message in future
-        return redirect(url_for('prayed_list'))
+    # Default redirect in case of issues or item not found
+    redirect_target_country_code = item_country_code_from_form
 
-    post_label_key_search = post_label_form if post_label_form is not None else ""
-
-    # Read the log for the specific country to ensure data is current
-    read_log(country_code_form)
-
-    found_item_to_put_back = None
-    # Search in the specified country's prayed_for_data
-    # Need to handle cases where prayed_for_data[country_code_form] might be empty or not yet populated
-    items_list = prayed_for_data.get(country_code_form, [])
-    item_index_to_remove = -1
-
-    for i, item in enumerate(items_list):
-        # Ensure comparison is robust, especially for post_label which can be None or empty string
-        item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
-        if item['person_name'] == person_name and item_post_label == post_label_key_search:
-            found_item_to_put_back = item
-            item_index_to_remove = i
-            break # Found the item
-
-    if found_item_to_put_back:
-        # Ensure 'country_code' is in the item before putting back to queue
-        if 'country_code' not in found_item_to_put_back:
-            found_item_to_put_back['country_code'] = country_code_form
-
-        data_queue.put(found_item_to_put_back) # Add item back to the global queue
-
-        # Remove from the specific country's prayed list by index
-        if item_index_to_remove != -1: # Should always be true if found_item_to_put_back is not None
-            prayed_for_data[country_code_form].pop(item_index_to_remove)
-
-        # Add to the specific country's queued entries set
-        queued_entries_data[country_code_form].add((person_name, post_label_key_search))
-        write_log(country_code_form) # Write log for the specific country
-
-        # Update hex map for the specific country
-        hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_form)
-        post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_form)
-        if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
-            plot_hex_map_with_hearts(
-                hex_map_gdf, # Use the fetched GeoDataFrame
-                post_label_df, # Use the fetched DataFrame
-                prayed_for_data[country_code_form],
-                list(data_queue.queue),
-                country_code_form
-            )
+    if not item_country_code_from_form or item_country_code_from_form not in COUNTRIES_CONFIG:
+        logging.error(f"Invalid or missing country_code '{item_country_code_from_form}' in put_back request form.")
+        # Fallback redirect logic will handle this
     else:
-        logging.warning(f"Could not find item for {person_name}, {post_label_form} in {COUNTRIES_CONFIG[country_code_form]['name']} to put back in queue.")
+        post_label_key_search = post_label_form if post_label_form is not None else ""
+        read_log(item_country_code_from_form) # Read log for the specific country from form
 
-    # Redirect back to the prayed list, possibly for the same country
-    return redirect(url_for('prayed_list', country=country_code_form))
+        found_item_to_put_back = None
+        items_list = prayed_for_data.get(item_country_code_from_form, [])
+        item_index_to_remove = -1
+
+        for i, item_in_log in enumerate(items_list):
+            item_in_log_post_label = item_in_log.get('post_label') if item_in_log.get('post_label') is not None else ""
+            if item_in_log['person_name'] == person_name and item_in_log_post_label == post_label_key_search:
+                found_item_to_put_back = item_in_log # Use the item from the log
+                item_index_to_remove = i
+                break
+
+        if found_item_to_put_back:
+            # Ensure 'country_code' in the item being put back is correct (should be from the form/log)
+            found_item_to_put_back['country_code'] = item_country_code_from_form
+
+            data_queue.put(found_item_to_put_back)
+
+            if item_index_to_remove != -1:
+                prayed_for_data[item_country_code_from_form].pop(item_index_to_remove)
+
+            queued_entries_data[item_country_code_from_form].add((person_name, post_label_key_search))
+            write_log(item_country_code_from_form)
+
+            hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
+            post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form)
+            if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
+                plot_hex_map_with_hearts(
+                    hex_map_gdf,
+                    post_label_df,
+                    prayed_for_data[item_country_code_from_form],
+                    list(data_queue.queue),
+                    item_country_code_from_form
+                )
+            logging.info(f"Item {person_name} ({post_label_key_search}) from {item_country_code_from_form} put back in queue.")
+        else:
+            logging.warning(f"Could not find item for {person_name} ({post_label_key_search}) in {item_country_code_from_form} to put back in queue.")
+
+    # Enhanced redirect logic
+    if redirect_target_country_code and redirect_target_country_code in COUNTRIES_CONFIG:
+        return redirect(url_for('prayed_list', country_code=redirect_target_country_code))
+    else:
+        default_redirect_country = list(COUNTRIES_CONFIG.keys())[0] if COUNTRIES_CONFIG else None
+        if default_redirect_country:
+            logging.warning(f"put_back_in_queue: Invalid or missing country_code in form ('{item_country_code_from_form}'). Redirecting to default: {default_redirect_country}")
+            return redirect(url_for('prayed_list', country_code=default_redirect_country))
+        else:
+            logging.error("put_back_in_queue: No valid country_code from form and no default country configured.")
+            return redirect(url_for('home')) # Absolute fallback
 
 
 if __name__ == '__main__':

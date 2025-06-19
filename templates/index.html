@@ -27,21 +27,18 @@
     <ul id="queue_list"></ul>
     <div class="links">
         {# Ensure default_country_code is available, or fallback to the first key from all_countries if COUNTRIES_CONFIG is not empty #}
-        {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %}
+        {# {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %} #}
 
-        {% if display_country_code %}
-            <a href="{{ url_for('prayed_list', country_code=display_country_code) }}">View prayed for representatives ({{ all_countries[display_country_code].name }})</a>
-            <a href="{{ url_for('statistics', country_code=display_country_code) }}">View Statistics ({{ all_countries[display_country_code].name }})</a>
-        {% else %}
-            <a href="#">View prayed for representatives (No countries configured)</a>
-            <a href="#">View Statistics (No countries configured)</a>
-        {% endif %}
+        {# Always show overall links, and specific country links if a default is available #}
+        <a href="{{ url_for('prayed_list_overall') }}">View prayed for representatives</a>
+        <a href="{{ url_for('statistics_overall') }}">View Statistics</a>
         <a href="{{ url_for('queue_page') }}">View Full Queue</a>
     </div>
     <script>
         const allCountriesConfig = {{ all_countries | tojson }};
         let processedCount = {{ (all_countries.values() | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
         const totalRepresentativesAllCountries = {{ (all_countries.values() | sum(attribute='total_representatives')) }};
+        let currently_displayed_map_country_code = {{ initial_map_country_code | tojson }};
 
 
         function updateQueueInfo() {
@@ -59,8 +56,8 @@
                         document.getElementById('queue_size').innerText = data.length;
                         if (data.length > 0) {
                             const current = data[0];
-                            const countryCode = current.country_code;
-                            const countryName = (allCountriesConfig && allCountriesConfig[countryCode]) ? allCountriesConfig[countryCode].name : 'Unknown Country';
+                            const new_person_country_code = current.country_code; // Use a distinct name for clarity
+                            const countryName = (allCountriesConfig && allCountriesConfig[new_person_country_code]) ? allCountriesConfig[new_person_country_code].name : 'Unknown Country';
 
                             let representativeText = '';
                             if (!current.place || current.place === 'N/A' || current.place.trim() === '') {
@@ -79,12 +76,38 @@
                                     </div>
                                 </div>
                             `;
+
+                            if (new_person_country_code && new_person_country_code !== currently_displayed_map_country_code) {
+                                console.log(`Current person's country (${new_person_country_code}) differs from displayed map (${currently_displayed_map_country_code}). Fetching new map.`);
+                                fetch(`/generate_map_for_country/${new_person_country_code}`)
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            throw new Error(`Failed to generate map for ${new_person_country_code}: ${response.statusText}`);
+                                        }
+                                        return response.json();
+                                    })
+                                    .then(map_gen_response => {
+                                        console.log(map_gen_response.status || 'Map generation triggered.');
+                                        reloadHexMap();
+                                        currently_displayed_map_country_code = new_person_country_code;
+                                    })
+                                    .catch(error => {
+                                        console.error('Error updating map for new country:', error);
+                                    });
+                            } else {
+                                // Country is the same, or no new person, but still reload map if queue changed.
+                                // This ensures highlight updates if top person of same country changes.
+                                reloadHexMap();
+                            }
                             document.getElementById('next-button').style.display = 'block';
                         } else {
                             document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
                             document.getElementById('next-button').style.display = 'none';
+                            // Optional: if queue is empty, maybe revert to a default map or clear it?
+                            // For now, it keeps showing the last map.
+                            reloadHexMap(); // Reload to ensure map is up-to-date (e.g. no highlight if queue empty)
                         }
-                        reloadHexMap();
+                        // reloadHexMap(); // This was the original position, moved up for clarity
                     } else {
                         console.error('Unexpected data format:', data);
                     }
