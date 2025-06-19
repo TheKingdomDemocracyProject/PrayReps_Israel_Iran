@@ -699,7 +699,11 @@ def put_back_in_queue():
             logging.error("put_back_in_queue: No valid country_code from form and no default country configured.")
             return redirect(url_for('home')) # Absolute fallback
 
-initialize_app_data()
+# Start data initialization in a background thread
+logging.info("Creating and starting the initialize_app_data background thread.")
+init_thread = threading.Thread(target=initialize_app_data, name="InitDataThread")
+init_thread.daemon = True # Make it a daemon so it doesn't block app exit if it hangs, similar to update_queue
+init_thread.start()
 
 if __name__ == '__main__':
     # Note: Data initialization is now called globally when the module loads.
