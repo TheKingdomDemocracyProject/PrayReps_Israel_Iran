@@ -27,7 +27,8 @@ COUNTRIES_CONFIG = {
         'post_label_mapping_path': None,
         'total_representatives': 120,
         'log_file': 'prayed_for_israel.json',
-        'name': 'Israel'
+        'name': 'Israel',
+        'flag': '🇮🇱'
     },
     'iran': {
         'csv_path': 'data/20240510_iran.csv',
@@ -36,7 +37,8 @@ COUNTRIES_CONFIG = {
         'post_label_mapping_path': None,
         'total_representatives': 290,
         'log_file': 'prayed_for_iran.json',
-        'name': 'Iran'
+        'name': 'Iran',
+        'flag': '🇮🇷'
     }
 }
 HEART_IMG_PATH = 'static/heart_icons/heart_red.png' # Path to the heart image for map plotting (remains global)
@@ -297,7 +299,7 @@ def queue_page():
     # However, if direct modification of items is preferred here, it can be kept.
     # For consistency with instructions, let's ensure all_countries is passed for template-side lookup.
     logging.info(f"Queue items for /queue page: {items}")
-    return render_template('queue.html', queue=items, all_countries=COUNTRIES_CONFIG)
+    return render_template('queue.html', queue=items, all_countries=COUNTRIES_CONFIG, HEART_IMG_PATH=HEART_IMG_PATH)
 
 @app.route('/queue/json')
 def get_queue_json():

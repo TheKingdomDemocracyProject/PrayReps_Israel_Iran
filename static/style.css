@@ -271,3 +271,42 @@ body {
     margin-left: auto;
     margin-right: auto;
 }
+
+/* Queue Page Specific Styles */
+.queue-list {
+    list-style-type: none; /* Remove default bullets if using flags */
+    padding-left: 0;
+}
+
+.queue-list li {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex; /* For aligning flag and text */
+    align-items: center;
+    gap: 10px; /* Space between elements */
+}
+
+.queue-list li:last-child {
+    border-bottom: none;
+}
+
+.country-flag {
+    font-size: 1.5em; /* Make flag emoji a bit larger */
+}
+
+.person-name {
+    font-weight: bold;
+}
+
+.item-details {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.queue-thumbnail {
+    width: 40px;
+    height: 40px; /* Make it square */
+    object-fit: cover; /* Crop image to fit */
+    border-radius: 4px;
+    margin-left: auto; /* Push thumbnail to the right */
+}
