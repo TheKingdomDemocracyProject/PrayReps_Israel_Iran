@@ -92,6 +92,70 @@ POST_LABEL_MAPPINGS_STORE = {}
 # Old global paths and direct loads are removed as they are now per-country
 # heart_img_path remains global as specified.
 
+def initialize_app_data():
+    # The content from the existing `if __name__ == '__main__':` block's loop
+    # and the thread starting line will go here.
+    logging.info("Starting application data initialization...")
+
+    for country_code_init in COUNTRIES_CONFIG.keys():
+        logging.info(f"Initializing data for country: {country_code_init}")
+        logging.info(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}")
+        logging.info(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}")
+        logging.info(f"Using log file path: {COUNTRIES_CONFIG[country_code_init]['log_file']}")
+
+        # Ensure log file exists and read initial log data
+        log_fp = COUNTRIES_CONFIG[country_code_init]['log_file']
+        if not os.path.exists(log_fp):
+             logging.info(f"Log file {log_fp} not found, creating empty one.")
+             with open(log_fp, 'w') as f:
+                json.dump([], f)
+        read_log(country_code_init) # read_log already logs its actions
+
+        # Fetch and process CSV data for deputies
+        df_init = fetch_csv(country_code_init) # fetch_csv logs its actions
+        if not df_init.empty:
+            process_deputies(df_init, country_code_init) # process_deputies logs
+            logging.info(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.")
+        else:
+            logging.warning(f"CSV data for {country_code_init} was empty. No deputies processed.")
+
+        # Load map shape data
+        map_path = COUNTRIES_CONFIG[country_code_init]['map_shape_path']
+        if os.path.exists(map_path):
+            HEX_MAP_DATA_STORE[country_code_init] = load_hex_map(map_path)
+            if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
+                logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
+            elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
+                logging.warning(f"Loaded hex map for {country_code_init} is empty.")
+            else:
+                logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
+        else:
+            logging.error(f"Map file not found: {map_path} for country {country_code_init}")
+            HEX_MAP_DATA_STORE[country_code_init] = None
+
+        # Load post label mapping data
+        post_label_path = COUNTRIES_CONFIG[country_code_init].get('post_label_mapping_path')
+        if post_label_path and os.path.exists(post_label_path):
+            POST_LABEL_MAPPINGS_STORE[country_code_init] = load_post_label_mapping(post_label_path)
+        elif post_label_path:
+            logging.error(f"Post label mapping file not found: {post_label_path} for country {country_code_init}")
+            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()
+        else:
+            logging.info(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.")
+
+        # Logging for post_label_mapping results
+        if POST_LABEL_MAPPINGS_STORE.get(country_code_init) is not None and not POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
+            logging.info(f"Successfully loaded post label mapping for {country_code_init} with {len(POST_LABEL_MAPPINGS_STORE[country_code_init])} entries.")
+        elif POST_LABEL_MAPPINGS_STORE.get(country_code_init) is not None and POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
+            logging.warning(f"Loaded post label mapping for {country_code_init} is empty (this may be normal).")
+        # No else needed as it's initialized to empty DataFrame
+
+    logging.info("Application data initialization complete.")
+
+    # Start the queue updating thread
+    logging.info("Starting the update_queue background thread.")
+    threading.Thread(target=update_queue, daemon=True).start()
+
 # Function to fetch the CSV
 def fetch_csv(country_code):
     logging.info(f"Fetching CSV data for {country_code}")
@@ -634,64 +698,13 @@ def put_back_in_queue():
             logging.error("put_back_in_queue: No valid country_code from form and no default country configured.")
             return redirect(url_for('home')) # Absolute fallback
 
+initialize_app_data()
 
 if __name__ == '__main__':
-    # Initial Data Loading
-    for country_code_init in COUNTRIES_CONFIG.keys():
-        logging.info(f"Initializing data for country: {country_code_init}")
-        logging.info(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}")
-        logging.info(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}")
-        logging.info(f"Using log file path: {COUNTRIES_CONFIG[country_code_init]['log_file']}")
-        # Ensure log file exists and read initial log data
-        log_fp = COUNTRIES_CONFIG[country_code_init]['log_file']
-        if not os.path.exists(log_fp):
-             with open(log_fp, 'w') as f:
-                json.dump([], f)
-        read_log(country_code_init)
-
-        # Fetch and process CSV data for deputies
-        df_init = fetch_csv(country_code_init)
-        if not df_init.empty:
-            process_deputies(df_init, country_code_init)
-            logging.info(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.")
-
-        # Load map shape data
-        map_path = COUNTRIES_CONFIG[country_code_init]['map_shape_path']
-        if os.path.exists(map_path):
-            HEX_MAP_DATA_STORE[country_code_init] = load_hex_map(map_path)
-            if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
-                logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
-            elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
-                logging.warning(f"Loaded hex map for {country_code_init} is empty.")
-            else:
-                logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
-        else:
-            logging.error(f"Map file not found: {map_path} for country {country_code_init}")
-            HEX_MAP_DATA_STORE[country_code_init] = None # Ensure key exists
-
-        # Load post label mapping data
-        post_label_path = COUNTRIES_CONFIG[country_code_init].get('post_label_mapping_path') # Use .get() for safety
-        if post_label_path and os.path.exists(post_label_path):
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = load_post_label_mapping(post_label_path)
-        elif post_label_path:  # Only log error if a path was actually specified but not found
-            logging.error(f"Post label mapping file not found: {post_label_path} for country {country_code_init}")
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()  # Assign empty DataFrame
-        else:  # Path is None or empty
-            logging.info(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.")
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()  # Assign empty DataFrame for None path
-
-        if POST_LABEL_MAPPINGS_STORE[country_code_init] is not None and not POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
-            logging.info(f"Successfully loaded post label mapping for {country_code_init} with {len(POST_LABEL_MAPPINGS_STORE[country_code_init])} entries.")
-        elif POST_LABEL_MAPPINGS_STORE[country_code_init] is not None and POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
-            logging.warning(f"Loaded post label mapping for {country_code_init} is empty (this may be normal).")
-        else: # Should not happen given current logic which assigns empty DataFrame
-            logging.error(f"Post label mapping for {country_code_init} is None (unexpected).")
-
-    # Start the queue updating thread
-    threading.Thread(target=update_queue, daemon=True).start()
-
+    # Note: Data initialization is now called globally when the module loads.
+    # The initialize_app_data() call is NOT here anymore.
     try:
-        # Run the Flask app with debug mode enabled
+        # When running locally, Flask's dev server will also run initialize_app_data() once on import.
         port = int(os.environ.get('PORT', 5000))
         app.run(debug=True, host='0.0.0.0', port=port)
     except KeyboardInterrupt:
