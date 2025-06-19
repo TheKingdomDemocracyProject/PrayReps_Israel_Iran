@@ -2,26 +2,39 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>People and Places We Will Pray For</title>
+    <title>Prayer Queue (All Countries)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="queuecontent">
-        <h1>People and Places We Will Pray For</h1>
+        <h1>Prayer Queue (All Countries)</h1>
         <div class="links">
-            <a href="/">Back to Main</a>
-            <a href="/prayed">View Prayed Constituencies</a>
-			<a href="/statistics">View Statistics</a>
+            <a href="{{ url_for('home') }}">Back to Main</a>
+            {# Assuming default_country_code logic similar to index.html for these links if needed #}
+            {# Or link to a generic /prayed and /statistics landing page if those exist #}
+            {# For now, let's make them simple, assuming user can navigate from there #}
+            <a href="{{ url_for('prayed_list') }}">View Prayed Lists</a>
+            <a href="{{ url_for('statistics') }}">View Statistics</a>
         </div>
         <div class="queue-list">
+            <ul>
                 {% for item in queue %}
-                <div class="queue-item">{{ item.person_name }} - {{ item.post_label }}</div>
+                <li>
+                    {{ item.person_name }}
+                    {% if item.party %}({{ item.party }}){% endif %}
+                    - {{ item.place or 'N/A' }}
+                    - Country: {{ all_countries[item.country_code].name if item.country_code and item.country_code in all_countries else 'Unknown' }}
+                    {% if item.thumbnail %}
+                        <img src="{{ item.thumbnail }}" alt="Image of {{ item.person_name }}" style="width: 50px; height: auto; vertical-align: middle; margin-left: 10px;">
+                    {% endif %}
+                </li>
+                {% else %}
+                <li>The queue is currently empty.</li>
                 {% endfor %}
+            </ul>
         </div>
         <div class="links">
-            <a href="/">Back to Main</a>
-            <a href="/prayed">View Prayed Constituencies</a>
-			<a href="/statistics">View Statistics</a>
+            <a href="{{ url_for('home') }}">Back to Main</a>
         </div>
     </div>
     <script>

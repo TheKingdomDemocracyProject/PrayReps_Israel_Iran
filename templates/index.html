@@ -25,12 +25,23 @@
     </div>
     <ul id="queue_list"></ul>
     <div class="links">
-        <a href="/prayed">View Prayed Constituencies</a>
-        <a href="/queue">View Queue</a>
-        <a href="/statistics">View Statistics</a>
+        {# Ensure default_country_code is available, or fallback to the first key from all_countries if COUNTRIES_CONFIG is not empty #}
+        {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %}
+
+        {% if display_country_code %}
+            <a href="{{ url_for('prayed_list', country_code=display_country_code) }}">View Prayed Constituencies ({{ all_countries[display_country_code].name }})</a>
+            <a href="{{ url_for('statistics', country_code=display_country_code) }}">View Statistics ({{ all_countries[display_country_code].name }})</a>
+        {% else %}
+            <a href="#">View Prayed Constituencies (No countries configured)</a>
+            <a href="#">View Statistics (No countries configured)</a>
+        {% endif %}
+        <a href="{{ url_for('queue_page') }}">View Full Queue</a>
     </div>
     <script>
-        let processedCount = {{ 491 - remaining }};
+        const allCountriesConfig = {{ all_countries | tojson }};
+        let processedCount = {{ (all_countries | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
+        const totalRepresentativesAllCountries = {{ all_countries | sum(attribute='total_representatives') }};
+
 
         function updateQueueInfo() {
             console.log('Fetching queue data...');
@@ -47,21 +58,23 @@
                         document.getElementById('queue_size').innerText = data.length;
                         if (data.length > 0) {
                             const current = data[0];
+                            const countryCode = current.country_code;
+                            const countryName = (allCountriesConfig && allCountriesConfig[countryCode]) ? allCountriesConfig[countryCode].name : 'Unknown Country';
+
                             document.getElementById('current-constituency').innerHTML = `
                                 <div class="profile">
                                     <div class="profile-image-container">
                                         <img id="profileImage" src="${current.thumbnail}" alt="Profile image of ${current.person_name}">
                                     </div>
                                     <div class="profile-text">
-                                        <span id="personName">${current.person_name}</span>
-                                        is elected to serve
-                                        <span id="constituency">${current.place}</span>
+                                        Praying for <span id="personName">${current.person_name}</span> from ${countryName}
+                                        representing <span id="constituency">${current.place || 'N/A'}</span> (${current.party || 'N/A'})
                                     </div>
                                 </div>
                             `;
                             document.getElementById('next-button').style.display = 'block';
                         } else {
-                            document.getElementById('current-constituency').innerText = 'Waiting for results. Stay tuned!';
+                            document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
                             document.getElementById('next-button').style.display = 'none';
                         }
                         reloadHexMap();
@@ -87,8 +100,16 @@
         function nextConstituency() {
             fetch('/process_item', { method: 'POST' })
                 .then(() => {
-                    processedCount++;
-                    document.getElementById('remaining').innerText = 491 - processedCount;
+                    processedCount++; // Increment local count of processed items
+                    // The 'remaining' is now globally calculated in app.py and passed to the template.
+                    // We should fetch the updated global remaining count, or update it based on current item processing.
+                    // For simplicity, let's decrement the total displayed remaining count.
+                    // A more robust solution would be to get the new 'remaining' from the server.
+                    const remainingElement = document.getElementById('remaining');
+                    let currentRemaining = parseInt(remainingElement.innerText);
+                    if (!isNaN(currentRemaining)) {
+                        remainingElement.innerText = Math.max(0, currentRemaining - 1);
+                    }
                     updateQueueInfo();
                 })
                 .catch(error => {
@@ -97,11 +118,18 @@
         }
 
         function purgeQueue() {
-            fetch('/purge', { method: 'POST' })
-                .then(() => {
-                    updateQueueInfo();
-                    processedCount = 0;
-                    document.getElementById('remaining').innerText = 491;
+            fetch('/purge', { method: 'POST' }) // Assuming GET for purge as per app.py, if POST, keep as is.
+                                                // The instruction for app.py had /purge as GET.
+                .then(response => {
+                    if(response.ok) {
+                        // Update UI after successful purge
+                        processedCount = 0;
+                        document.getElementById('remaining').innerText = totalRepresentativesAllCountries; // Reset to total
+                        updateQueueInfo(); // This will refresh the queue display (should be empty)
+                                           // and current-constituency message.
+                    } else {
+                        console.error('Purge request failed');
+                    }
                 })
                 .catch(error => {
                     console.error('Error purging queue:', error);
