@@ -28,3 +28,15 @@ Alternatively, you can manually deploy by following these steps:
 4.  Use `pip install -r requirements.txt` as the build command.
 5.  Use `gunicorn app:app` as the start command.
 6.  Configure any necessary environment variables (e.g., `PYTHON_VERSION`).
+
+## Logging and Persistence
+
+*   The application now generates more detailed logs in the `data/logs/` directory within the deployment. This includes:
+    *   `app.log`: General application logs.
+    *   `prayed_for_israel.json`, `prayed_for_iran.json` (etc.): JSON files storing the state of prayed-for items for each country. These are critical for the application's state.
+*   **Important for Render/PaaS Deployments:** The persistence of the `data/logs/` directory (and therefore the application's state stored in the JSON files) depends on the platform's filesystem behavior. On ephemeral filesystems, which are common, this data may be lost upon application restarts or redeployments.
+*   If you observe that the queue is always empty or previously prayed-for items are not remembered after a redeploy or restart on Render, it is likely due to the ephemeral nature of the filesystem where these state files are stored.
+*   For true persistence of the prayed-for state, a database or a platform-specific persistent storage solution (like Render Disks) would be necessary. This would involve:
+    1.  Configuring the persistent storage on the platform (e.g., adding a Disk in `render.yaml`).
+    2.  Updating the `LOG_DIR` variable in `app.py` to point to the mount path of this persistent storage.
+*   The current setup prioritizes simple deployment. If state loss is problematic, adapting the application to use a persistent storage solution is the recommended next step.

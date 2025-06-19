@@ -12,6 +12,8 @@ import os
 # Ensure PIL doesn't use tkinter
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 # Load hex map
 def load_hex_map(hex_map_path):
     hex_map = gpd.read_file(hex_map_path)
@@ -37,6 +39,7 @@ def load_random_heart_image():
 
 # Plot hex map with white fill color and light grey boundaries
 def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_items_list, queue_items_list, country_code):
+    logging.info(f"Plotting hex map for country {country_code}. Output path: {os.path.join(APP_ROOT, 'static/hex_map.png')}")
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
     if hex_map_gdf is None or hex_map_gdf.empty:
@@ -215,7 +218,7 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     else:
         logging.debug("Global queue is empty. Nothing to highlight.")
 
-    plt.savefig('static/hex_map.png', bbox_inches='tight', pad_inches=0.5, dpi=100)
+    plt.savefig(os.path.join(APP_ROOT, 'static/hex_map.png'), bbox_inches='tight', pad_inches=0.5, dpi=100)
     plt.close(fig)  # Close the plot to free memory
 import logging # Ensure logging is imported if not already
 

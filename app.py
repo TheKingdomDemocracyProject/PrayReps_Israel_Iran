@@ -16,27 +16,30 @@ import random
 from hex_map import load_hex_map, load_post_label_mapping, plot_hex_map_with_hearts
 from utils import format_pretty_timestamp
 
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(APP_ROOT, 'data', 'logs')
+
 app = Flask(__name__)
 
 # Configuration
 COUNTRIES_CONFIG = {
     'israel': {
-        'csv_path': 'data/20221101_israel.csv',
-        'geojson_path': 'data/ISR_Parliament_120.geojson',
-        'map_shape_path': 'data/ISR_Parliament_120.geojson',
+        'csv_path': os.path.join(APP_ROOT, 'data/20221101_israel.csv'),
+        'geojson_path': os.path.join(APP_ROOT, 'data/ISR_Parliament_120.geojson'),
+        'map_shape_path': os.path.join(APP_ROOT, 'data/ISR_Parliament_120.geojson'),
         'post_label_mapping_path': None,
         'total_representatives': 120,
-        'log_file': 'prayed_for_israel.json',
+        'log_file': os.path.join(LOG_DIR, 'prayed_for_israel.json'),
         'name': 'Israel',
         'flag': '🇮🇱'
     },
     'iran': {
-        'csv_path': 'data/20240510_iran.csv',
-        'geojson_path': 'data/IRN_IslamicParliamentofIran_290_v2.geojson',
-        'map_shape_path': 'data/IRN_IslamicParliamentofIran_290_v2.geojson',
+        'csv_path': os.path.join(APP_ROOT, 'data/20240510_iran.csv'),
+        'geojson_path': os.path.join(APP_ROOT, 'data/IRN_IslamicParliamentofIran_290_v2.geojson'),
+        'map_shape_path': os.path.join(APP_ROOT, 'data/IRN_IslamicParliamentofIran_290_v2.geojson'),
         'post_label_mapping_path': None,
         'total_representatives': 290,
-        'log_file': 'prayed_for_iran.json',
+        'log_file': os.path.join(LOG_DIR, 'prayed_for_iran.json'),
         'name': 'Iran',
         'flag': '🇮🇷'
     }
@@ -81,7 +84,7 @@ POST_LABEL_MAPPINGS_STORE = {}
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
-    logging.FileHandler("app.log"),
+    logging.FileHandler(os.path.join(LOG_DIR, "app.log")),
     logging.StreamHandler()
 ])
 
@@ -91,6 +94,7 @@ def fetch_csv(country_code):
     csv_path = COUNTRIES_CONFIG[country_code]['csv_path']
     try:
         df = pd.read_csv(csv_path)
+        logging.info(f"Successfully fetched {len(df)} rows from {csv_path}")
         df = df.replace({np.nan: None})
         logging.debug(f"Fetched data for {country_code}: {df.head()}")
         return df
@@ -123,9 +127,11 @@ def process_deputies(csv_data, country_code):
 
 # Function to periodically update the queue
 def update_queue():
+    logging.info("Update_queue thread started.")
     with app.app_context():
         while True:
-            all_potential_candidates = []
+            try:
+                all_potential_candidates = []
 
             # Phase 1: Collect all potential candidates from all countries
             for country_code_collect in COUNTRIES_CONFIG.keys():
@@ -162,11 +168,12 @@ def update_queue():
                             item['thumbnail'] = image_url
 
                             all_potential_candidates.append(item)
+                            # logging.debug(f"Added potential candidate: {item['person_name']} from {country_code_collect}")
                             country_candidates_selected_this_cycle.add(entry_id) # Mark as selected for this country in this cycle
                     else:
                         logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
 
-            logging.info(f"Collected {len(all_potential_candidates)} potential new candidates from all countries.")
+            logging.info(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.")
 
             # Shuffle all collected candidates together for better mixing
             random.shuffle(all_potential_candidates)
@@ -194,17 +201,22 @@ def update_queue():
                     # logging.debug(f"Item {current_entry_id} for {current_item_country_code} already in queued_entries_data. Skipping add to data_queue.")
 
             if items_added_to_global_queue_this_cycle > 0:
-                 logging.info(f"Added {items_added_to_global_queue_this_cycle} new items to the global queue after shuffling.")
+                 logging.info(f"Added {items_added_to_global_queue_this_cycle} new items to the global data_queue this cycle.")
 
-            logging.debug(f"Global queue size after update cycle: {data_queue.qsize()}")
+            logging.info(f"Update_queue cycle complete. Current global queue size: {data_queue.qsize()}")
+            except Exception as e:
+                logging.error(f"Unexpected error in update_queue thread: {e}", exc_info=True)
             time.sleep(90)
 
 def read_log(country_code):
     log_file_path = COUNTRIES_CONFIG[country_code]['log_file']
+    logging.info(f"Attempting to read log file: {log_file_path}")
     try:
         with open(log_file_path, 'r') as f:
             prayed_for_data[country_code] = json.load(f)
+            logging.info(f"Successfully loaded {len(prayed_for_data[country_code])} items from log file {log_file_path}")
     except FileNotFoundError:
+        logging.warning(f"Log file not found at {log_file_path}. Initializing prayed_for_data for {country_code} as empty list.")
         prayed_for_data[country_code] = [] # Initialize if not found for this country
     except json.JSONDecodeError:
         logging.error(f"Error decoding JSON from {log_file_path}. Initializing as empty list.")
@@ -212,8 +224,13 @@ def read_log(country_code):
 
 def write_log(country_code):
     log_file_path = COUNTRIES_CONFIG[country_code]['log_file']
-    with open(log_file_path, 'w') as f:
-        json.dump(prayed_for_data[country_code], f)
+    logging.info(f"Attempting to write {len(prayed_for_data[country_code])} items to log file: {log_file_path}")
+    try:
+        with open(log_file_path, 'w') as f:
+            json.dump(prayed_for_data[country_code], f)
+        logging.info(f"Successfully wrote to log file: {log_file_path}")
+    except (IOError, OSError) as e:
+        logging.error(f"Error writing log file {log_file_path}: {e}")
 
 @app.route('/')
 def home():
@@ -235,6 +252,15 @@ def home():
 
     hex_map_gdf = HEX_MAP_DATA_STORE.get(map_to_display_country)
     post_label_df = POST_LABEL_MAPPINGS_STORE.get(map_to_display_country)
+    logging.info(f"Rendering home page. Map for country: {map_to_display_country}")
+    if hex_map_gdf is not None and not hex_map_gdf.empty:
+        logging.info(f"Hex map data for {map_to_display_country} is available for plotting.")
+    else:
+        logging.warning(f"Hex map data for {map_to_display_country} is MISSING or empty. Plotting may fail or show default.")
+    if post_label_df is not None and not post_label_df.empty:
+        logging.info(f"Post label mapping for {map_to_display_country} is available.")
+    else:
+        logging.warning(f"Post label mapping for {map_to_display_country} is MISSING or empty (may be normal for random allocation).")
     if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
         # Pass the list of prayed items for the country, the global queue, and the country code
         plot_hex_map_with_hearts(
@@ -628,8 +654,15 @@ def put_back_in_queue():
 
 
 if __name__ == '__main__':
+    os.makedirs(LOG_DIR, exist_ok=True)
+    logging.info(f"APP_ROOT set to: {APP_ROOT}")
+    logging.info(f"LOG_DIR set to: {LOG_DIR}. Log directory created if it didn't exist.")
     # Initial Data Loading
     for country_code_init in COUNTRIES_CONFIG.keys():
+        logging.info(f"Initializing data for country: {country_code_init}")
+        logging.info(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}")
+        logging.info(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}")
+        logging.info(f"Using log file path: {COUNTRIES_CONFIG[country_code_init]['log_file']}")
         # Ensure log file exists and read initial log data
         log_fp = COUNTRIES_CONFIG[country_code_init]['log_file']
         if not os.path.exists(log_fp):
@@ -641,11 +674,18 @@ if __name__ == '__main__':
         df_init = fetch_csv(country_code_init)
         if not df_init.empty:
             process_deputies(df_init, country_code_init)
+            logging.info(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.")
 
         # Load map shape data
         map_path = COUNTRIES_CONFIG[country_code_init]['map_shape_path']
         if os.path.exists(map_path):
             HEX_MAP_DATA_STORE[country_code_init] = load_hex_map(map_path)
+            if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
+                logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
+            elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
+                logging.warning(f"Loaded hex map for {country_code_init} is empty.")
+            else:
+                logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
         else:
             logging.error(f"Map file not found: {map_path} for country {country_code_init}")
             HEX_MAP_DATA_STORE[country_code_init] = None # Ensure key exists
@@ -660,6 +700,13 @@ if __name__ == '__main__':
         else:  # Path is None or empty
             logging.info(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.")
             POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()  # Assign empty DataFrame for None path
+
+        if POST_LABEL_MAPPINGS_STORE[country_code_init] is not None and not POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
+            logging.info(f"Successfully loaded post label mapping for {country_code_init} with {len(POST_LABEL_MAPPINGS_STORE[country_code_init])} entries.")
+        elif POST_LABEL_MAPPINGS_STORE[country_code_init] is not None and POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
+            logging.warning(f"Loaded post label mapping for {country_code_init} is empty (this may be normal).")
+        else: # Should not happen given current logic which assigns empty DataFrame
+            logging.error(f"Post label mapping for {country_code_init} is None (unexpected).")
 
     # Start the queue updating thread
     threading.Thread(target=update_queue, daemon=True).start()
