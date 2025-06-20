@@ -419,7 +419,7 @@ def get_current_queue_items_from_db():
             SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp
             FROM prayer_candidates
             WHERE status = 'queued'
-            ORDER BY initial_add_timestamp ASC
+            ORDER BY RANDOM()
         """)
         rows = cursor.fetchall()
         for row in rows:
@@ -482,16 +482,18 @@ def update_queue():
             cursor = conn.cursor()
             # Check if prayer_candidates has any entries at all.
             # If it does, assume seeding/migration has occurred.
-            cursor.execute("SELECT COUNT(id) FROM prayer_candidates")
-            count = cursor.fetchone()[0]
-            logging.info(f"[update_queue] Current count in prayer_candidates table: {count}")
+            # cursor.execute("SELECT COUNT(id) FROM prayer_candidates")
+            # count = cursor.fetchone()[0]
+            # logging.info(f"[update_queue] Current count in prayer_candidates table: {count}")
 
-            if count > 0:
-                logging.info(f"[update_queue] prayer_candidates is not empty (count: {count}). Seeding will be skipped.")
-                return
+            # if count > 0:
+            #     logging.info(f"[update_queue] prayer_candidates is not empty (count: {count}). Seeding will be skipped.")
+            #     return
 
-            logging.info("[update_queue] prayer_candidates is empty. Proceeding with initial data population from CSVs.")
+            # logging.info("[update_queue] prayer_candidates is empty. Proceeding with initial data population from CSVs.")
             # If table is empty, proceed with the existing logic to populate prayer_candidates with 'queued' items.
+            # The above check is removed to allow update_queue to always run fully.
+            logging.info("[update_queue] Proceeding with data population from CSVs.")
 
             all_potential_candidates = []
             # Phase 1: Collect all potential candidates from all countries
@@ -1104,6 +1106,10 @@ def purge_queue():
     logging.info("Cleared in-memory prayed_for_data for all countries.")
 
     # JSON log file clearing is now removed as it's obsolete.
+
+    # Call update_queue to repopulate
+    logging.info("Calling update_queue() after purge to repopulate the queue.")
+    update_queue()
 
     # Reset map for the default/first country after purge
     default_country_purge = list(COUNTRIES_CONFIG.keys())[0]
