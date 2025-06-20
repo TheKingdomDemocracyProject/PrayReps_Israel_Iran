@@ -9,6 +9,7 @@ from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image, ImageFile
 import random
 import os
+import time # Import time module
 
 # Ensure PIL doesn't use tkinter
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -58,36 +59,41 @@ def load_random_heart_image():
 
 # Plot hex map with white fill color and light grey boundaries
 def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_items_list, queue_items_list, country_code):
-    # ==== DETAILED LOGGING START ====
-    logging.info(f"[plot_hex_map_with_hearts] Processing country_code: {country_code}")
-    logging.info(f"[plot_hex_map_with_hearts] Number of prayed_for_items_list: {len(prayed_for_items_list)}")
-    logging.info(f"[plot_hex_map_with_hearts] Number of queue_items_list: {len(queue_items_list)}")
-    # ==== DETAILED LOGGING END ====
+    output_filename = "hex_map.png"
+    output_path = os.path.join(APP_ROOT, 'static', output_filename)
 
-    logging.info(f"Plotting hex map for country {country_code}. Output path: {os.path.join(APP_ROOT, 'static/hex_map.png')}")
+    logging.info(f"Plotting hex map for country {country_code}. Target output path: {output_path}")
+
+    # Log file details BEFORE saving
+    if os.path.exists(output_path):
+        try:
+            mod_time = os.path.getmtime(output_path)
+            logging.info(f"File {output_path} exists. Last modified: {time.ctime(mod_time)} (Timestamp: {mod_time})")
+        except Exception as e_stat:
+            logging.error(f"Error getting stat for {output_path}: {e_stat}")
+    else:
+        logging.info(f"File {output_path} does not exist yet.")
+
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
-    if hex_map_gdf is None or hex_map_gdf.empty:
-        logging.error(f"Hex map data is missing or empty for country {country_code}. Cannot plot map.")
-        plt.close(fig)
-        return
-
-    # Original line:
-    # hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
-    # ax.set_axis_off()
+    # Debugging visualization for Iran/Israel
+    fig_bg_color = 'white' # Default figure background
+    hex_plot_color = 'white' # Default hex fill color
 
     if country_code in ['israel', 'iran']:
         num_prayed = len(prayed_for_items_list)
-        # Determine a base color for hexes based on whether num_prayed is even or odd
-        # This ensures a very obvious visual change if num_prayed changes.
-        fill_color_for_hexes = 'lightyellow' if num_prayed % 2 == 0 else 'lightcyan'
-        logging.info(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={fill_color_for_hexes}")
-        hex_map_gdf.plot(ax=ax, color=fill_color_for_hexes, edgecolor='lightgrey')
-    else:
-        # Default behavior for other countries
-        hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
+        if num_prayed % 2 == 0:
+            hex_plot_color = 'lightyellow'
+            fig_bg_color = 'palegoldenrod' # Even more obvious change
+        else:
+            hex_plot_color = 'lightcyan'
+            fig_bg_color = 'paleturquoise' # Even more obvious change
+        logging.info(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={hex_plot_color}, fig_bg_color={fig_bg_color}")
+        fig.patch.set_facecolor(fig_bg_color) # Set figure background
+        ax.set_facecolor(fig_bg_color) # Also set axes background for good measure
 
-    ax.set_axis_off() # Ensure axis is turned off after plotting
+    hex_map_gdf.plot(ax=ax, color=hex_plot_color, edgecolor='lightgrey')
+    ax.set_axis_off()
 
     bounds = hex_map_gdf.geometry.total_bounds
     ax.set_xlim(bounds[0], bounds[2])
@@ -97,8 +103,8 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     logging.info(f"Plotting map for country: {country_code}. Prayed items: {len(prayed_for_items_list)}, Queue items: {len(queue_items_list)}")
 
     if country_code in ['israel', 'iran']:
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Using Random Allocation Strategy.")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present from previous logging additions)
+        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Using Random Allocation Strategy.") # Retained if still relevant
         # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         # Random Allocation Strategy
         if 'id' not in hex_map_gdf.columns:
@@ -107,8 +113,8 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
             return
 
         num_hearts = len(prayed_for_items_list)
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-        logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts to be plotted: {num_hearts}")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
+        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts to be plotted: {num_hearts}")
         # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         all_hex_ids = list(hex_map_gdf['id'].unique())
 
@@ -118,12 +124,12 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
         else:
             sorted_hex_ids = sorted(all_hex_ids)
             hex_ids_to_color = sorted_hex_ids[:num_hearts]
-            # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-            logging.info(f"[plot_hex_map_with_hearts - {country_code}] hex_ids_to_color (first 5 if many): {hex_ids_to_color[:5]}")
-            if len(hex_ids_to_color) > 5:
-                logging.info(f"[plot_hex_map_with_hearts - {country_code}] ... and {len(hex_ids_to_color) - 5} more hex_ids_to_color.")
+            # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
+            # logging.info(f"[plot_hex_map_with_hearts - {country_code}] hex_ids_to_color (first 5 if many): {hex_ids_to_color[:5]}")
+            # if len(hex_ids_to_color) > 5:
+            #    logging.info(f"[plot_hex_map_with_hearts - {country_code}] ... and {len(hex_ids_to_color) - 5} more hex_ids_to_color.")
             # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-
+            logging.debug(f"IR/ISR: Plotting {num_hearts} hearts on hex_ids: {hex_ids_to_color[:5]}...") # Log first 5
             for hex_id_to_color in hex_ids_to_color:
                 location_geom = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_color]
                 if not location_geom.empty:
@@ -137,7 +143,7 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                         logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
                 else:
                     logging.warning(f"Geometry not found for hex ID {hex_id_to_color} in {country_code}.")
-        # Queue highlighting is not implemented for this strategy as per requirements.
+        # Queue highlighting is not implemented for this strategy as per requirements. (This comment refers to the old specific strategy, random has its own below)
 
     else:
         # Specific Mapping Strategy (for other potential countries)
@@ -209,31 +215,32 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     # Conditional Highlighting for Top Queue Item
     if queue_items_list: # Check if queue is not empty
         top_queue_item = queue_items_list[0]
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-        if country_code in ['israel', 'iran']:
-            if top_queue_item.get('country_code') == country_code:
-                logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item ({top_queue_item.get('person_name')}) matches current country. Attempting highlighting.")
-            else:
-                logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item country ({top_queue_item.get('country_code')}) does not match current country. No highlight.")
+        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
+        # if country_code in ['israel', 'iran']:
+        #    if top_queue_item.get('country_code') == country_code:
+        #        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item ({top_queue_item.get('person_name')}) matches current country. Attempting highlighting.")
+        #    else:
+        #        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item country ({top_queue_item.get('country_code')}) does not match current country. No highlight.")
         # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         if top_queue_item.get('country_code') == country_code: # Only highlight if top item matches current map's country
             logging.info(f"Attempting to highlight top queue item for {country_code}: {top_queue_item.get('person_name')}")
             if country_code in ['israel', 'iran']:
+                logging.debug(f"IR/ISR: Attempting to highlight queue item for {country_code}")
                 # Random Allocation: Highlight the 'next' hex
                 if hex_map_gdf is not None and not hex_map_gdf.empty and 'id' in hex_map_gdf.columns:
                     num_hearts_already_plotted = len(prayed_for_items_list)
                     all_hex_ids = list(hex_map_gdf['id'].unique())
                     sorted_hex_ids = sorted(all_hex_ids)
 
-                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-                    logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts_already_plotted for highlight check: {num_hearts_already_plotted}")
-                    logging.info(f"[plot_hex_map_with_hearts - {country_code}] Total hexes available for highlight check: {len(sorted_hex_ids)}")
+                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
+                    # logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts_already_plotted for highlight check: {num_hearts_already_plotted}")
+                    # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Total hexes available for highlight check: {len(sorted_hex_ids)}")
                     # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
 
                     if num_hearts_already_plotted < len(sorted_hex_ids):
                         hex_id_to_highlight = sorted_hex_ids[num_hearts_already_plotted]
-                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ====
-                        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Attempting to highlight hex_id: {hex_id_to_highlight}")
+                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
+                        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Attempting to highlight hex_id: {hex_id_to_highlight}")
                         # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
                         location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
                         if not location_geom_q.empty:
@@ -289,15 +296,16 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     else:
         logging.debug("Global queue is empty. Nothing to highlight.")
 
-    save_path = os.path.join(APP_ROOT, 'static/hex_map.png')
-    plt.savefig(save_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
-    plt.close(fig)  # Close the plot to free memory
-    # ==== DETAILED LOGGING START ====
-    if os.path.exists(save_path):
-        logging.info(f"[plot_hex_map_with_hearts] Successfully saved map to {save_path}")
-    else:
-        logging.error(f"[plot_hex_map_with_hearts] Failed to save map to {save_path}")
-    # ==== DETAILED LOGGING END ====
+    plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
+    plt.close(fig)
+    logging.info(f"Successfully saved map to {output_path}")
+    # Log file details AFTER saving
+    if os.path.exists(output_path):
+        try:
+            mod_time_after = os.path.getmtime(output_path)
+            logging.info(f"File {output_path} exists after save. Last modified: {time.ctime(mod_time_after)} (Timestamp: {mod_time_after})")
+        except Exception as e_stat_after:
+            logging.error(f"Error getting stat for {output_path} after save: {e_stat_after}")
 # Ensure logging is imported if not already # This line is now redundant due to import at top
 
 # Example usage for Case 2

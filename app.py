@@ -1157,18 +1157,17 @@ def put_back_in_queue():
             logging.error("put_back_in_queue: No valid country_code from form and no default country configured.")
             return redirect(url_for('home')) # Absolute fallback
 
-# Start data initialization in a background thread
-logging.info("Creating and starting the initialize_app_data background thread.")
-init_thread = threading.Thread(target=initialize_app_data, name="InitDataThread")
-init_thread.daemon = True # Make it a daemon so it doesn't block app exit if it hangs, similar to update_queue
-init_thread.start()
+# Synchronously initialize application data when the module is loaded
+logging.info("Starting synchronous application data initialization at module load...")
+initialize_app_data() # This will block until complete. Its last step starts the update_queue daemon.
+logging.info("Synchronous application data initialization finished at module load.")
 
 if __name__ == '__main__':
-    # Note: Data initialization is now called globally when the module loads.
-    # The initialize_app_data() call is NOT here anymore.
+    # This block is mainly for local Flask development server
     try:
-        # When running locally, Flask's dev server will also run initialize_app_data() once on import.
         port = int(os.environ.get('PORT', 5000))
+        # Note: initialize_app_data() is already called above, so it runs once when app starts.
+        # For local dev, app.run() might cause another load if reloader is on, but for Gunicorn, it's fine.
         app.run(debug=True, host='0.0.0.0', port=port)
     except KeyboardInterrupt:
         print('You pressed Ctrl+C! Exiting gracefully...')
