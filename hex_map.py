@@ -62,17 +62,17 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     output_filename = "hex_map.png"
     output_path = os.path.join(APP_ROOT, 'static', output_filename)
 
-    logging.info(f"Plotting hex map for country {country_code}. Target output path: {output_path}")
+    logging.debug(f"Plotting hex map for country {country_code}. Target output path: {output_path}")
 
     # Log file details BEFORE saving
     if os.path.exists(output_path):
         try:
             mod_time = os.path.getmtime(output_path)
-            logging.info(f"File {output_path} exists. Last modified: {time.ctime(mod_time)} (Timestamp: {mod_time})")
+            logging.debug(f"File {output_path} exists. Last modified: {time.ctime(mod_time)} (Timestamp: {mod_time})")
         except Exception as e_stat:
             logging.error(f"Error getting stat for {output_path}: {e_stat}")
     else:
-        logging.info(f"File {output_path} does not exist yet.")
+        logging.debug(f"File {output_path} does not exist yet.")
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
@@ -88,7 +88,7 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
         else:
             hex_plot_color = 'lightcyan'
             fig_bg_color = 'paleturquoise' # Even more obvious change
-        logging.info(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={hex_plot_color}, fig_bg_color={fig_bg_color}")
+        logging.debug(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={hex_plot_color}, fig_bg_color={fig_bg_color}")
         fig.patch.set_facecolor(fig_bg_color) # Set figure background
         ax.set_facecolor(fig_bg_color) # Also set axes background for good measure
 
@@ -303,7 +303,7 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     if os.path.exists(output_path):
         try:
             mod_time_after = os.path.getmtime(output_path)
-            logging.info(f"File {output_path} exists after save. Last modified: {time.ctime(mod_time_after)} (Timestamp: {mod_time_after})")
+            logging.debug(f"File {output_path} exists after save. Last modified: {time.ctime(mod_time_after)} (Timestamp: {mod_time_after})")
         except Exception as e_stat_after:
             logging.error(f"Error getting stat for {output_path} after save: {e_stat_after}")
 # Ensure logging is imported if not already # This line is now redundant due to import at top
