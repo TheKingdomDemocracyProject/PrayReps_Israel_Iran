@@ -120,6 +120,9 @@
         function reloadHexMap() {
             const hexMap = document.getElementById('hex-map');
             const newSrc = hexMap.src.split('?')[0] + '?' + new Date().getTime();  // Force reload by adding a timestamp
+            // ==== DETAILED LOGGING START ====
+            console.log("Reloading hex map with new source:", newSrc);
+            // ==== DETAILED LOGGING END ====
             const newImage = new Image();
             newImage.onload = function () {
                 hexMap.src = newSrc;
@@ -140,10 +143,28 @@
                     if (!isNaN(currentRemaining)) {
                         remainingElement.innerText = Math.max(0, currentRemaining - 1);
                     }
-                    updateQueueInfo();
+
+                    // Fetch and log the next item from /queue/json
+                    fetch('/queue/json')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data && Array.isArray(data) && data.length > 0) {
+                                console.log('Next item from queue/json after process_item:', data[0]);
+                            } else if (data && Array.isArray(data) && data.length === 0) {
+                                console.log('Queue is empty after process_item.');
+                            } else {
+                                console.log('Unexpected data format from queue/json after process_item:', data);
+                            }
+                            updateQueueInfo(); // Call updateQueueInfo after logging
+                        })
+                        .catch(error => {
+                            console.error('Error fetching queue/json after processing item:', error);
+                            updateQueueInfo(); // Still call updateQueueInfo to refresh UI
+                        });
                 })
                 .catch(error => {
                     console.error('Error processing item:', error);
+                    // Potentially call updateQueueInfo() here as well if the UI needs to be refreshed even on error
                 });
         }
 

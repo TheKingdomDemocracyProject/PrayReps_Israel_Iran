@@ -152,33 +152,45 @@ def initialize_app_data():
     init_sqlite_db() # Initialize SQLite database
     migrate_json_logs_to_db() # Migrate old JSON logs if prayed_items table is empty
     load_prayed_for_data_from_db() # Load all prayed for data from DB into memory
-    logging.info("Starting application data initialization...")
+    logging.debug("Starting application data initialization...") # Changed from INFO to DEBUG
 
     # Loop for deputies_data, HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE initialization
     for country_code_init in COUNTRIES_CONFIG.keys():
-        logging.info(f"Initializing non-log data for country: {country_code_init}")
-        logging.info(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}")
-        logging.info(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}")
+        logging.debug(f"Initializing non-log data for country: {country_code_init}") # Changed from INFO to DEBUG
+        logging.debug(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}") # Changed from INFO to DEBUG
+        logging.debug(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}") # Changed from INFO to DEBUG
         # The specific log line for 'log_file' path has been removed.
 
         # Fetch and process CSV data for deputies
         df_init = fetch_csv(country_code_init)
         if not df_init.empty:
             process_deputies(df_init, country_code_init) # process_deputies logs
-            logging.info(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.")
+            logging.debug(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.") # Changed from INFO to DEBUG
         else:
             logging.warning(f"CSV data for {country_code_init} was empty. No deputies processed.")
 
         # Load map shape data
         map_path = COUNTRIES_CONFIG[country_code_init]['map_shape_path']
         if os.path.exists(map_path):
+            if country_code_init in ['israel', 'iran']:
+                logging.debug(f"Attempting to load hex map for specific country: {country_code_init} from {map_path}") # Changed from INFO to DEBUG
+
             HEX_MAP_DATA_STORE[country_code_init] = load_hex_map(map_path)
-            if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
-                logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
-            elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
-                logging.warning(f"Loaded hex map for {country_code_init} is empty.")
-            else:
-                logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
+
+            if country_code_init in ['israel', 'iran']:
+                if HEX_MAP_DATA_STORE[country_code_init] is None:
+                    logging.error(f"Critical Failure: Map data loading returned None for {country_code_init}.")
+                elif HEX_MAP_DATA_STORE[country_code_init].empty:
+                    logging.warning(f"Warning: Loaded map data for {country_code_init} is an empty GeoDataFrame.")
+                else:
+                    logging.info(f"Success: Loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
+            else: # Fallback to generic logging for other countries
+                if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
+                    logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
+                elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
+                    logging.warning(f"Loaded hex map for {country_code_init} is empty.")
+                else:
+                    logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
         else:
             logging.error(f"Map file not found: {map_path} for country {country_code_init}")
             HEX_MAP_DATA_STORE[country_code_init] = None
@@ -190,8 +202,9 @@ def initialize_app_data():
         elif post_label_path:
             logging.error(f"Post label mapping file not found: {post_label_path} for country {country_code_init}")
             POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()
-        else:
-            logging.info(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.")
+        else: # No path specified (e.g., for Israel, Iran)
+            logging.debug(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.") # Changed from INFO to DEBUG
+            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame() # Ensure empty DataFrame is assigned
 
         # Logging for post_label_mapping results
         if POST_LABEL_MAPPINGS_STORE.get(country_code_init) is not None and not POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
@@ -200,10 +213,10 @@ def initialize_app_data():
             logging.warning(f"Loaded post label mapping for {country_code_init} is empty (this may be normal).")
         # No else needed as it's initialized to empty DataFrame
 
-    logging.info("Application data initialization complete.")
+    logging.debug("Application data initialization complete.") # Changed from INFO to DEBUG
 
     # Start the queue updating thread
-    logging.info("Starting the update_queue background thread.")
+    logging.info("Starting the update_queue background thread.") # Kept as INFO
     threading.Thread(target=update_queue, daemon=True).start()
 
 def migrate_json_logs_to_db():
@@ -318,13 +331,13 @@ def get_current_queue_items_from_db():
 
 # Function to fetch the CSV
 def fetch_csv(country_code):
-    logging.info(f"Fetching CSV data for {country_code}")
+    logging.debug(f"Fetching CSV data for {country_code}") # Changed from INFO to DEBUG
     csv_path = COUNTRIES_CONFIG[country_code]['csv_path']
     try:
         df = pd.read_csv(csv_path)
-        logging.info(f"Successfully fetched {len(df)} rows from {csv_path}")
+        logging.debug(f"Successfully fetched {len(df)} rows from {csv_path}") # Changed from INFO to DEBUG
         df = df.replace({np.nan: None})
-        logging.debug(f"Fetched data for {country_code}: {df.head()}")
+        logging.debug(f"Fetched data for {country_code}: {df.head()}") # Kept as DEBUG
         return df
     except FileNotFoundError:
         logging.error(f"CSV file not found for {country_code} at {csv_path}")
@@ -400,7 +413,7 @@ def update_queue():
                         else:
                             logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
 
-                logging.info(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.")
+                logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.") # Changed from INFO to DEBUG
                 random.shuffle(all_potential_candidates)
 
                 items_added_to_db_this_cycle = 0
@@ -543,6 +556,40 @@ def add_prayed_item_to_db(item):
         if conn:
             conn.close()
 
+def reload_single_country_prayed_data_from_db(country_code_to_reload):
+    global prayed_for_data
+    if country_code_to_reload not in prayed_for_data:
+        logging.warning(f"[reload_single_country_prayed_data_from_db] Invalid country_code: {country_code_to_reload}")
+        return
+
+    logging.info(f"[reload_single_country_prayed_data_from_db] Reloading prayed_for_data for country: {country_code_to_reload}")
+    prayed_for_data[country_code_to_reload] = [] # Clear current list for this country
+
+    conn_reload = None
+    try:
+        conn_reload = sqlite3.connect(DATABASE_URL)
+        conn_reload.row_factory = sqlite3.Row
+        cursor_reload = conn_reload.cursor()
+
+        cursor_reload.execute("SELECT person_name, post_label, country_code, party, thumbnail, prayed_timestamp FROM prayed_items WHERE country_code = ?", (country_code_to_reload,))
+
+        rows = cursor_reload.fetchall()
+        loaded_count = 0
+        for row_data in rows:
+            item = dict(row_data)
+            item['timestamp'] = item.pop('prayed_timestamp', None)
+            prayed_for_data[country_code_to_reload].append(item)
+            loaded_count += 1
+        logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} items for {country_code_to_reload} into prayed_for_data.")
+
+    except sqlite3.Error as e:
+        logging.error(f"[reload_single_country_prayed_data_from_db] SQLite error for {country_code_to_reload}: {e}")
+    except Exception as e_gen:
+        logging.error(f"[reload_single_country_prayed_data_from_db] Unexpected error for {country_code_to_reload}: {e_gen}", exc_info=True)
+    finally:
+        if conn_reload:
+            conn_reload.close()
+
 @app.route('/')
 def home():
     total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
@@ -561,6 +608,15 @@ def home():
     if current_item_display:
         map_to_display_country = current_item_display.get('country_code', map_to_display_country)
 
+    # ==== DETAILED LOGGING START ====
+    logging.debug(f"[home] map_to_display_country determined as: {map_to_display_country}") # Changed from INFO to DEBUG
+    if map_to_display_country in prayed_for_data:
+        logging.debug(f"[home] Size of prayed_for_data['{map_to_display_country}']: {len(prayed_for_data[map_to_display_country])}") # Changed from INFO to DEBUG
+    else:
+        logging.warning(f"[home] map_to_display_country '{map_to_display_country}' not found in prayed_for_data keys.")
+    logging.debug(f"[home] Number of current_queue_items being passed to plot_hex_map_with_hearts: {len(current_queue_items)}") # Changed from INFO to DEBUG
+    # ==== DETAILED LOGGING END ====
+
     # load_prayed_for_data_from_db() is called at startup.
     # If specific routes need to refresh this from DB, they could call it,
     # but for now, relying on initial load.
@@ -569,15 +625,15 @@ def home():
 
     hex_map_gdf = HEX_MAP_DATA_STORE.get(map_to_display_country)
     post_label_df = POST_LABEL_MAPPINGS_STORE.get(map_to_display_country)
-    logging.info(f"Rendering home page. Map for country: {map_to_display_country}")
+    logging.debug(f"Rendering home page. Map for country: {map_to_display_country}") # Changed from INFO to DEBUG
     if hex_map_gdf is not None and not hex_map_gdf.empty:
-        logging.info(f"Hex map data for {map_to_display_country} is available for plotting.")
+        logging.debug(f"Hex map data for {map_to_display_country} is available for plotting.") # Changed from INFO to DEBUG
     else:
         logging.warning(f"Hex map data for {map_to_display_country} is MISSING or empty. Plotting may fail or show default.")
     if post_label_df is not None and not post_label_df.empty:
-        logging.info(f"Post label mapping for {map_to_display_country} is available.")
+        logging.debug(f"Post label mapping for {map_to_display_country} is available.") # Changed from INFO to DEBUG
     else:
-        logging.warning(f"Post label mapping for {map_to_display_country} is MISSING or empty (may be normal for random allocation).")
+        logging.warning(f"Post label mapping for {map_to_display_country} is MISSING or empty (may be normal for random allocation).") # Kept as WARNING
     if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
         # Pass the list of prayed items for the country, the global queue, and the country code
         plot_hex_map_with_hearts(
@@ -609,6 +665,9 @@ def home():
 
 @app.route('/generate_map_for_country/<country_code>')
 def generate_map_for_country(country_code):
+    # ==== DETAILED LOGGING START ====
+    logging.debug(f"[generate_map_for_country] Received country_code: {country_code}") # Changed from INFO to DEBUG
+    # ==== DETAILED LOGGING END ====
     if country_code not in COUNTRIES_CONFIG:
         logging.error(f"Invalid country code '{country_code}' for map generation.")
         return jsonify(error='Invalid country code'), 404
@@ -621,12 +680,17 @@ def generate_map_for_country(country_code):
     prayed_list_for_map = prayed_for_data.get(country_code, [])
     current_queue_for_map = get_current_queue_items_from_db() # Get queue from DB
 
+    # ==== DETAILED LOGGING START ====
+    logging.debug(f"[generate_map_for_country] Size of prayed_list_for_map for '{country_code}': {len(prayed_list_for_map)}") # Changed from INFO to DEBUG
+    logging.debug(f"[generate_map_for_country] Size of current_queue_for_map for '{country_code}': {len(current_queue_for_map)}") # Changed from INFO to DEBUG
+    # ==== DETAILED LOGGING END ====
+
     if hex_map_gdf is None or hex_map_gdf.empty : # Check for None or empty GeoDataFrame
         logging.error(f"Map data (GeoDataFrame) not available for {country_code} in generate_map_for_country.")
         return jsonify(error=f'Map data not available for {country_code}'), 500
     # post_label_df can be None or empty for random allocation countries, plot_hex_map_with_hearts handles this.
 
-    logging.info(f"Generating map for country: {country_code} on demand.")
+    logging.debug(f"Generating map for country: {country_code} on demand.") # Changed from INFO to DEBUG
     plot_hex_map_with_hearts(hex_map_gdf, post_label_df, prayed_list_for_map, current_queue_for_map, country_code)
 
     return jsonify(status=f'Map generated for {country_code}'), 200
@@ -673,6 +737,8 @@ def process_item():
             # Convert row to a dictionary
             item = dict(row)
             item_id_to_delete = item['id']
+            person_name_to_log = item.get('person_name', 'N/A')
+            logging.info(f"Fetched item from prayer_queue: ID={item_id_to_delete}, Name={person_name_to_log}")
 
             # Store details for use after deletion
             processed_item_details = item.copy()
@@ -681,18 +747,20 @@ def process_item():
             # Delete the item from the queue
             cursor.execute("DELETE FROM prayer_queue WHERE id = ?", (item_id_to_delete,))
             conn.commit()
+            logging.info(f"Successfully deleted item ID={item_id_to_delete}, Name={person_name_to_log} from prayer_queue DB table.")
             item_processed = True
 
             # Add timestamp for logging purposes (not stored in DB this way)
             item['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
             # Add to SQLite prayed_items table
+            # add_prayed_item_to_db already logs success/failure, including IntegrityError
             add_prayed_item_to_db(item)
 
             # Also update in-memory for current session consistency
             prayed_for_data[country_code_item].append(item)
 
-            logging.info(f"Processed item from SQLite queue, added to prayed_items DB and in-memory: {item['person_name']} from {COUNTRIES_CONFIG[country_code_item]['name']}")
+            logging.info(f"Processed item from SQLite queue (ID={item_id_to_delete}, Name={person_name_to_log}), added to prayed_items DB and in-memory for country {COUNTRIES_CONFIG[country_code_item]['name']}")
 
         else:
             logging.info("No items in SQLite prayer_queue to process.")
@@ -711,35 +779,44 @@ def process_item():
 
     if item_processed and processed_item_details:
         # Plot map for the specific country of the processed item
-        country_code_plot = processed_item_details['country_code']
-        hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_plot)
-        post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_plot)
-
-        # Get current SQLite queue for plotting
-        current_sqlite_queue_for_map = []
-        temp_conn = None
         try:
-            temp_conn = sqlite3.connect(DATABASE_URL)
-            temp_conn.row_factory = sqlite3.Row
-            temp_cursor = temp_conn.cursor()
-            temp_cursor.execute("SELECT person_name, post_label, country_code FROM prayer_queue")
-            current_sqlite_queue_for_map = [dict(item) for item in temp_cursor.fetchall()]
-        except sqlite3.Error as e_map_queue:
-            logging.error(f"SQLite error fetching queue for map plotting: {e_map_queue}")
-        finally:
-            if temp_conn:
-                temp_conn.close()
+            # Plot map for the specific country of the processed item
+            country_code_plot = processed_item_details['country_code']
+            hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_plot)
+            post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_plot)
 
-        if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
-            plot_hex_map_with_hearts(
-                hex_map_gdf,
-                post_label_df,
-                prayed_for_data[country_code_plot],
-                current_sqlite_queue_for_map, # Pass current SQLite queue
-                country_code_plot
-            )
-        else:
-            logging.warning(f"Map data for {country_code_plot} not loaded. Skipping map plot after processing.")
+            current_sqlite_queue_for_map = []
+            temp_conn_map = None # Renamed to avoid conflict with outer conn
+            try:
+                temp_conn_map = sqlite3.connect(DATABASE_URL)
+                temp_conn_map.row_factory = sqlite3.Row
+                temp_cursor_map = temp_conn_map.cursor() # Renamed cursor
+                temp_cursor_map.execute("SELECT person_name, post_label, country_code FROM prayer_queue")
+                current_sqlite_queue_for_map = [dict(item_row) for item_row in temp_cursor_map.fetchall()] # Renamed item
+            except sqlite3.Error as e_map_queue:
+                logging.error(f"SQLite error fetching queue for map plotting in /process_item: {e_map_queue}")
+            finally:
+                if temp_conn_map:
+                    temp_conn_map.close()
+
+            logging.debug(f"[/process_item] Attempting map update for country_code_plot: {country_code_plot}") # Changed from INFO to DEBUG
+            if country_code_plot in prayed_for_data:
+                logging.debug(f"[/process_item] Size of prayed_for_data['{country_code_plot}'] for map: {len(prayed_for_data[country_code_plot])}") # Changed from INFO to DEBUG
+            logging.debug(f"[/process_item] Number of current_sqlite_queue_for_map items for map: {len(current_sqlite_queue_for_map)}") # Changed from INFO to DEBUG
+
+            if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None: # post_label_df can be empty for IR/ISR
+                plot_hex_map_with_hearts(
+                    hex_map_gdf,
+                    post_label_df,
+                    prayed_for_data[country_code_plot],
+                    current_sqlite_queue_for_map,
+                    country_code_plot
+                )
+            else:
+                logging.warning(f"Map data for {country_code_plot} not loaded or incomplete. Skipping map plot after processing.")
+        except Exception as e_map_plotting:
+            logging.error(f"Error during map plotting in /process_item for {processed_item_details.get('person_name')}: {e_map_plotting}", exc_info=True)
+            # Continue to return success for item processing even if map plotting fails
 
     return '', 204
 
@@ -977,12 +1054,23 @@ def put_back_in_queue():
     item_country_code_from_form = request.form.get('country_code')
     redirect_target_country_code = item_country_code_from_form # Used for redirecting at the end
 
+    # Strip whitespace from form inputs
+    if person_name:
+        person_name = person_name.strip()
+
+    _post_label_from_form_stripped = None
+    if post_label_form is not None: # Ensure not to strip None, only actual strings
+        _post_label_from_form_stripped = post_label_form.strip()
+        # If stripping makes it empty, it will be handled by later logic converting "" to None for DB
+
     if not item_country_code_from_form or item_country_code_from_form not in COUNTRIES_CONFIG:
         logging.error(f"Invalid or missing country_code '{item_country_code_from_form}' in put_back request form.")
     else:
-        post_label_key_search = post_label_form if post_label_form is not None else ""
-        # Standardize post_label for consistency, as done in update_queue
-        post_label_to_insert = post_label_key_search if post_label_key_search else None # Used for DB INSERT for prayer_queue
+        # For searching in memory (where "" is used for None) and deleting from prayed_items
+        post_label_key_search = _post_label_from_form_stripped if _post_label_from_form_stripped else ""
+
+        # For inserting into prayer_queue (where NULL is preferred over "")
+        pq_post_label = _post_label_from_form_stripped if _post_label_from_form_stripped else None
 
         # No need to call read_log here, data is in memory from initial load.
 
@@ -990,15 +1078,36 @@ def put_back_in_queue():
         item_index_to_remove_from_memory = -1
         current_country_prayed_list = prayed_for_data.get(item_country_code_from_form, [])
 
+        # Log details of what is being searched for from the form
+        logging.debug(f"[/put_back] Searching for item to remove: Name='{person_name}', PostLabel(form)='{post_label_form}', StandardizedPostLabelSearch='{post_label_key_search}', Country='{item_country_code_from_form}'") # Changed from INFO to DEBUG
+
         for i, item_in_memory in enumerate(current_country_prayed_list):
-            mem_item_post_label = item_in_memory.get('post_label') if item_in_memory.get('post_label') is not None else ""
-            if item_in_memory['person_name'] == person_name and mem_item_post_label == post_label_key_search:
+            mem_person_name = item_in_memory.get('person_name')
+            original_mem_post_label = item_in_memory.get('post_label') # Original value from memory
+            mem_item_post_label_standardized = original_mem_post_label if original_mem_post_label is not None else ""
+
+            # Detailed log for each item being checked in memory
+            logging.debug(f"[/put_back] Checking in-memory item #{i}: Name='{mem_person_name}', OriginalPostLabel='{original_mem_post_label}', StandardizedPostLabel='{mem_item_post_label_standardized}'") # Kept as DEBUG
+
+            if mem_person_name == person_name and mem_item_post_label_standardized == post_label_key_search:
                 item_to_put_back_from_memory = item_in_memory.copy()
                 item_index_to_remove_from_memory = i
+                logging.debug(f"[/put_back] Found item to remove at index {i}.") # Changed from INFO to DEBUG
                 break
+            # Add an else to log if no match for this iteration, for verbosity during debugging
+            # else:
+            #    logging.debug(f"[/put_back] No match for item #{i}. Name Match: {mem_person_name == person_name}, PostLabel Match: {mem_item_post_label_standardized == post_label_key_search}")
 
         db_conn = None # Rename to avoid conflict with outer 'conn' if it were used differently
         if item_to_put_back_from_memory:
+            # Enhanced logging for put_back
+            logging.info(f"Preparing to put back item: {item_to_put_back_from_memory.get('person_name')} for country {item_country_code_from_form}.") # Kept as INFO
+            logging.debug(f"Index to remove from memory: {item_index_to_remove_from_memory}.") # Changed from INFO to DEBUG
+            if item_country_code_from_form in prayed_for_data:
+                logging.debug(f"Current length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.") # Changed from INFO to DEBUG
+            else:
+                logging.warning(f"Country code {item_country_code_from_form} not found in prayed_for_data for length logging.") # Kept as WARNING
+
             try:
                 db_conn = sqlite3.connect(DATABASE_URL)
                 cursor = db_conn.cursor()
@@ -1007,8 +1116,8 @@ def put_back_in_queue():
                 # Ensure all necessary fields are present from item_to_put_back_from_memory
                 # 'added_timestamp' for prayer_queue table will be set by default by SQLite
                 pq_person_name = item_to_put_back_from_memory['person_name']
-                # Use post_label_to_insert which is derived from form, can be None
-                pq_post_label = post_label_to_insert
+                # Use pq_post_label which is derived from stripped form input
+                # pq_post_label is already defined above using the stripped and processed form value
                 pq_country_code = item_country_code_from_form # From form, validated
                 pq_party = item_to_put_back_from_memory.get('party', 'Other')
                 pq_thumbnail = item_to_put_back_from_memory.get('thumbnail', HEART_IMG_PATH)
@@ -1040,11 +1149,21 @@ def put_back_in_queue():
 
                 db_conn.commit()
 
-                # 3. Remove from in-memory prayed_for_data (already done before this block essentially, by popping)
-                if item_index_to_remove_from_memory != -1:
+                # 3. Remove from in-memory prayed_for_data
+                if item_index_to_remove_from_memory != -1 and item_country_code_from_form in prayed_for_data:
                     prayed_for_data[item_country_code_from_form].pop(item_index_to_remove_from_memory)
-                # No more write_log call needed here.
+                    logging.debug(f"Attempted pop from in-memory prayed_for_data for {item_to_put_back_from_memory.get('person_name')}.") # Changed from INFO to DEBUG
+                    logging.debug(f"New length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.") # Changed from INFO to DEBUG
+                elif item_country_code_from_form not in prayed_for_data:
+                    logging.warning(f"Cannot pop from prayed_for_data: country code {item_country_code_from_form} not found.") # Kept as WARNING
+                else: # item_index_to_remove_from_memory was -1
+                    logging.warning(f"Did not pop from prayed_for_data for {item_to_put_back_from_memory.get('person_name')} as item_index_to_remove_from_memory was -1.") # Kept as WARNING
+                # Existing logging for successful removal is now covered by the above.
 
+                # Force reload of this country's prayed_for_data from DB to ensure consistency
+                reload_single_country_prayed_data_from_db(item_country_code_from_form)
+
+                # Map plotting (already there)
                 hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
                 post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form)
                 current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db() # Fetch updated queue
@@ -1053,7 +1172,7 @@ def put_back_in_queue():
                     plot_hex_map_with_hearts(
                         hex_map_gdf,
                         post_label_df,
-                        prayed_for_data[item_country_code_from_form],
+                        prayed_for_data[item_country_code_from_form], # This will now use the reloaded data
                         current_sqlite_queue_for_map_put_back,
                         item_country_code_from_form
                     )
@@ -1073,7 +1192,7 @@ def put_back_in_queue():
             finally:
                 if db_conn: db_conn.close()
         else:
-            logging.warning(f"Could not find item for {person_name} (Post: {post_label_key_search}) in memory for {item_country_code_from_form} to put back.")
+            logging.warning(f"Could not find item for {person_name} (Post: {post_label_key_search}) in memory for {item_country_code_from_form} to put back in /put_back.")
 
     # Redirect logic (unchanged but now at the end of all operations)
     if redirect_target_country_code and redirect_target_country_code in COUNTRIES_CONFIG:
@@ -1087,18 +1206,17 @@ def put_back_in_queue():
             logging.error("put_back_in_queue: No valid country_code from form and no default country configured.")
             return redirect(url_for('home')) # Absolute fallback
 
-# Start data initialization in a background thread
-logging.info("Creating and starting the initialize_app_data background thread.")
-init_thread = threading.Thread(target=initialize_app_data, name="InitDataThread")
-init_thread.daemon = True # Make it a daemon so it doesn't block app exit if it hangs, similar to update_queue
-init_thread.start()
+# Synchronously initialize application data when the module is loaded
+logging.info("Starting synchronous application data initialization at module load...")
+initialize_app_data() # This will block until complete. Its last step starts the update_queue daemon.
+logging.info("Synchronous application data initialization finished at module load.")
 
 if __name__ == '__main__':
-    # Note: Data initialization is now called globally when the module loads.
-    # The initialize_app_data() call is NOT here anymore.
+    # This block is mainly for local Flask development server
     try:
-        # When running locally, Flask's dev server will also run initialize_app_data() once on import.
         port = int(os.environ.get('PORT', 5000))
+        # Note: initialize_app_data() is already called above, so it runs once when app starts.
+        # For local dev, app.run() might cause another load if reloader is on, but for Gunicorn, it's fine.
         app.run(debug=True, host='0.0.0.0', port=port)
     except KeyboardInterrupt:
         print('You pressed Ctrl+C! Exiting gracefully...')
