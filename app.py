@@ -477,18 +477,20 @@ def update_queue():
         logging.info("Update_queue thread started. Will check if initial seeding is needed.")
         conn = None
         try:
+            logging.info("[update_queue] Thread started and attempting to connect to DB.")
             conn = sqlite3.connect(DATABASE_URL)
             cursor = conn.cursor()
             # Check if prayer_candidates has any entries at all.
             # If it does, assume seeding/migration has occurred.
             cursor.execute("SELECT COUNT(id) FROM prayer_candidates")
             count = cursor.fetchone()[0]
+            logging.info(f"[update_queue] Current count in prayer_candidates table: {count}")
 
             if count > 0:
-                logging.info(f"Prayer_candidates table is not empty (contains {count} items). Initial seeding/population by update_queue will be skipped.")
+                logging.info(f"[update_queue] prayer_candidates is not empty (count: {count}). Seeding will be skipped.")
                 return
 
-            logging.info("Prayer_candidates table is empty. Proceeding with initial data population from CSVs.")
+            logging.info("[update_queue] prayer_candidates is empty. Proceeding with initial data population from CSVs.")
             # If table is empty, proceed with the existing logic to populate prayer_candidates with 'queued' items.
 
             all_potential_candidates = []
@@ -527,6 +529,7 @@ def update_queue():
 
             logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates for initial seeding.")
             random.shuffle(all_potential_candidates)
+            logging.info(f"[update_queue] Collected {len(all_potential_candidates)} total potential new candidates from CSVs for initial seeding.")
 
             items_added_to_db_this_cycle = 0
             # Connection is already established and cursor is available
@@ -554,7 +557,11 @@ def update_queue():
 
             if items_added_to_db_this_cycle > 0:
                 conn.commit() # Commit all successful inserts
-                logging.info(f"Added {items_added_to_db_this_cycle} new items to prayer_candidates with 'queued' status during initial seeding.")
+                logging.info(f"[update_queue] Database commit successful for {items_added_to_db_this_cycle} items.")
+                logging.info(f"[update_queue] Successfully inserted {items_added_to_db_this_cycle} new items into prayer_candidates during this seeding cycle.")
+            # Log even if 0 items were added, to confirm the loop completed.
+            logging.info(f"[update_queue] Attempted to insert candidates. Number of rows affected in this batch: {items_added_to_db_this_cycle}")
+
 
             current_db_candidates_size = 0 # Renamed variable
             cursor.execute("SELECT COUNT(id) FROM prayer_candidates WHERE status = 'queued'") # Check only 'queued'
@@ -564,10 +571,11 @@ def update_queue():
             logging.info(f"Initial seeding process complete. Current 'queued' items in prayer_candidates: {current_db_candidates_size}")
 
         except Exception as e: # General exception
-            logging.error(f"Unexpected error in update_queue (initial seeding into prayer_candidates): {e}", exc_info=True)
+            logging.error(f"[update_queue] An critical error occurred during execution: {e}", exc_info=True)
             if conn: # Rollback if error occurred during transaction
                 conn.rollback()
         finally:
+            logging.info("[update_queue] Reached finally block, will close connection if open.")
             if conn:
                 conn.close()
                 logging.debug("SQLite connection closed in update_queue.")
