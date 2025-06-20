@@ -76,22 +76,10 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
-    # Debugging visualization for Iran/Israel
     fig_bg_color = 'white' # Default figure background
     hex_plot_color = 'white' # Default hex fill color
-
-    if country_code in ['israel', 'iran']:
-        num_prayed = len(prayed_for_items_list)
-        if num_prayed % 2 == 0:
-            hex_plot_color = 'lightyellow'
-            fig_bg_color = 'palegoldenrod' # Even more obvious change
-        else:
-            hex_plot_color = 'lightcyan'
-            fig_bg_color = 'paleturquoise' # Even more obvious change
-        logging.debug(f"DEBUG IR/ISR: num_prayed={num_prayed}, hex_fill_color={hex_plot_color}, fig_bg_color={fig_bg_color}")
-        fig.patch.set_facecolor(fig_bg_color) # Set figure background
-        ax.set_facecolor(fig_bg_color) # Also set axes background for good measure
-
+    fig.patch.set_facecolor(fig_bg_color) # Set figure background
+    ax.set_facecolor(fig_bg_color) # Also set axes background for good measure
     hex_map_gdf.plot(ax=ax, color=hex_plot_color, edgecolor='lightgrey')
     ax.set_axis_off()
 

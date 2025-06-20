@@ -138,6 +138,29 @@ def init_sqlite_db():
         ''')
         logging.info("Ensured idx_prayed_items_unique index exists on prayed_items table.")
 
+        # Create prayer_candidates table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS prayer_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person_name TEXT NOT NULL,
+                post_label TEXT,
+                country_code TEXT NOT NULL,
+                party TEXT,
+                thumbnail TEXT,
+                status TEXT NOT NULL,
+                status_timestamp TIMESTAMP NOT NULL,
+                initial_add_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        logging.info("Ensured prayer_candidates table exists.")
+
+        # Create unique index for prayer_candidates
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_unique
+            ON prayer_candidates (person_name, post_label, country_code);
+        ''')
+        logging.info("Ensured idx_candidates_unique index exists on prayer_candidates table.")
+
         conn.commit()
         logging.info("Successfully initialized SQLite database tables and indexes.")
     except sqlite3.Error as e:
@@ -146,10 +169,91 @@ def init_sqlite_db():
         if conn:
             conn.close()
 
+def migrate_to_single_table_schema():
+    """Migrates data from old prayer_queue and prayed_items tables to the new prayer_candidates table."""
+    logging.info("Starting migration to single table schema if conditions are met.")
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_URL)
+        conn.row_factory = sqlite3.Row # To access columns by name
+        cursor = conn.cursor()
+
+        # 1. Check conditions for migration
+        cursor.execute("SELECT COUNT(*) FROM prayer_candidates")
+        candidates_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM prayer_queue")
+        queue_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM prayed_items")
+        prayed_count = cursor.fetchone()[0]
+
+        if candidates_count > 0:
+            logging.info(f"Prayer_candidates table is not empty (contains {candidates_count} items). Migration will not run.")
+            return
+
+        if queue_count == 0 and prayed_count == 0:
+            logging.info("Both prayer_queue and prayed_items tables are empty. No data to migrate.")
+            return
+
+        logging.info(f"Conditions met for migration: prayer_candidates is empty and old tables have data (queue: {queue_count}, prayed: {prayed_count}).")
+
+        # 2. Migrate from prayer_queue
+        migrated_from_queue = 0
+        if queue_count > 0:
+            cursor.execute("SELECT person_name, post_label, country_code, party, thumbnail, added_timestamp FROM prayer_queue")
+            queue_items = cursor.fetchall()
+            for item in queue_items:
+                try:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO prayer_candidates
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp)
+                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+                    ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['added_timestamp'], item['added_timestamp']))
+                    if cursor.rowcount > 0:
+                        migrated_from_queue += 1
+                except sqlite3.Error as e:
+                    logging.error(f"Error migrating item {item['person_name']} from prayer_queue: {e}")
+            logging.info(f"Migrated {migrated_from_queue} records from prayer_queue to prayer_candidates.")
+
+        # 3. Migrate from prayed_items
+        migrated_from_prayed = 0
+        if prayed_count > 0:
+            cursor.execute("SELECT person_name, post_label, country_code, party, thumbnail, prayed_timestamp FROM prayed_items")
+            prayed_items_list = cursor.fetchall()
+            for item in prayed_items_list:
+                try:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO prayer_candidates
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp)
+                        VALUES (?, ?, ?, ?, ?, 'prayed', ?, ?)
+                    ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['prayed_timestamp'], item['prayed_timestamp']))
+                    if cursor.rowcount > 0:
+                        migrated_from_prayed += 1
+                except sqlite3.Error as e:
+                    logging.error(f"Error migrating item {item['person_name']} from prayed_items: {e}")
+            logging.info(f"Migrated {migrated_from_prayed} records from prayed_items to prayer_candidates.")
+
+        conn.commit()
+        logging.info("Migration to single table schema completed successfully.")
+
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error during migration to single table schema: {e}")
+        if conn:
+            conn.rollback()
+    except Exception as e_main:
+        logging.error(f"Unexpected error during migration to single table schema: {e_main}", exc_info=True)
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
 def initialize_app_data():
     # The content from the existing `if __name__ == '__main__':` block's loop
     # and the thread starting line will go here.
     init_sqlite_db() # Initialize SQLite database
+    migrate_to_single_table_schema() # Migrate to new schema if needed
     migrate_json_logs_to_db() # Migrate old JSON logs if prayed_items table is empty
     load_prayed_for_data_from_db() # Load all prayed for data from DB into memory
     logging.debug("Starting application data initialization...") # Changed from INFO to DEBUG
@@ -310,16 +414,17 @@ def get_current_queue_items_from_db():
         conn = sqlite3.connect(DATABASE_URL)
         conn.row_factory = sqlite3.Row # Access columns by name
         cursor = conn.cursor()
-        # Select all relevant columns for display and processing
+        # Select from prayer_candidates with status 'queued'
         cursor.execute("""
-            SELECT id, person_name, post_label, country_code, party, thumbnail, added_timestamp
-            FROM prayer_queue
-            ORDER BY added_timestamp ASC
+            SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp
+            FROM prayer_candidates
+            WHERE status = 'queued'
+            ORDER BY initial_add_timestamp ASC
         """)
         rows = cursor.fetchall()
         for row in rows:
             items.append(dict(row))
-        logging.info(f"Fetched {len(items)} items from SQLite prayer_queue.")
+        logging.info(f"Fetched {len(items)} items with status 'queued' from prayer_candidates.")
     except sqlite3.Error as e:
         logging.error(f"SQLite error in get_current_queue_items_from_db: {e}")
     except Exception as e_gen:
@@ -369,113 +474,104 @@ def process_deputies(csv_data, country_code):
 # Function to periodically update the queue
 def update_queue():
     with app.app_context():
-        logging.info("Update_queue thread started.")
-        while True:
-            conn = None  # Initialize conn to None
-            try:
-                logging.info("update_queue [cycle start]: Checking for new items to add to SQLite prayer_queue.")
-                all_potential_candidates = []
-                # Phase 1: Collect all potential candidates from all countries
-                for country_code_collect in COUNTRIES_CONFIG.keys():
-                    df_update = fetch_csv(country_code_collect)
-                    if df_update.empty:
-                        logging.debug(f"No CSV data for {country_code_collect} in this cycle.")
-                        continue
+        logging.info("Update_queue thread started. Will check if initial seeding is needed.")
+        conn = None
+        try:
+            conn = sqlite3.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            # Check if prayer_candidates has any entries at all.
+            # If it does, assume seeding/migration has occurred.
+            cursor.execute("SELECT COUNT(id) FROM prayer_candidates")
+            count = cursor.fetchone()[0]
 
-                    df_update = df_update.sample(frac=1).reset_index(drop=True)
-                    # current_prayed_for_ids is used to avoid re-adding recently prayed for items from *this session*
-                    # It does not check the DB, as the DB queue handles persistence.
-                    current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
-                    country_candidates_selected_this_cycle = set() # Tracks items selected in the current CSV scan for this country
+            if count > 0:
+                logging.info(f"Prayer_candidates table is not empty (contains {count} items). Initial seeding/population by update_queue will be skipped.")
+                return
 
-                    for index, row in df_update.iterrows():
-                        if row.get('person_name'):
-                            item = row.to_dict()
-                            item['country_code'] = country_code_collect
-                            if not item.get('party'):
-                                item['party'] = 'Other'
+            logging.info("Prayer_candidates table is empty. Proceeding with initial data population from CSVs.")
+            # If table is empty, proceed with the existing logic to populate prayer_candidates with 'queued' items.
 
-                            # Ensure post_label is consistently handled (e.g., as empty string if None)
-                            item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
-                            item['post_label'] = item_post_label # Standardize it in the item dict
+            all_potential_candidates = []
+            # Phase 1: Collect all potential candidates from all countries
+            for country_code_collect in COUNTRIES_CONFIG.keys():
+                df_update = fetch_csv(country_code_collect)
+                if df_update.empty:
+                    logging.debug(f"No CSV data for {country_code_collect} during initial seeding.")
+                    continue
 
-                            entry_id = (item['person_name'], item_post_label) # Used for session-based prayed_for check
+                df_update = df_update.sample(frac=1).reset_index(drop=True)
+                current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
+                country_candidates_selected_this_cycle = set()
 
-                            # Check against this session's prayed_for data and candidates already selected in this cycle
-                            if entry_id not in current_prayed_for_ids and \
-                               entry_id not in country_candidates_selected_this_cycle:
-                                image_url = item.get('image_url', HEART_IMG_PATH)
-                                if not image_url: # Ensure thumbnail has a value
-                                    image_url = HEART_IMG_PATH
-                                item['thumbnail'] = image_url
-                                all_potential_candidates.append(item)
-                                country_candidates_selected_this_cycle.add(entry_id)
-                        else:
-                            logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
+                for index, row in df_update.iterrows():
+                    if row.get('person_name'):
+                        item = row.to_dict()
+                        item['country_code'] = country_code_collect
+                        if not item.get('party'):
+                            item['party'] = 'Other'
 
-                logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates from all countries this cycle.") # Changed from INFO to DEBUG
-                random.shuffle(all_potential_candidates)
+                        item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
+                        item['post_label'] = item_post_label
+                        entry_id = (item['person_name'], item_post_label)
 
-                items_added_to_db_this_cycle = 0
-                if all_potential_candidates: # Only connect if there's something to potentially add
-                    conn = sqlite3.connect(DATABASE_URL)
-                    cursor = conn.cursor()
+                        if entry_id not in current_prayed_for_ids and \
+                           entry_id not in country_candidates_selected_this_cycle:
+                            image_url = item.get('image_url', HEART_IMG_PATH)
+                            if not image_url:
+                                image_url = HEART_IMG_PATH
+                            item['thumbnail'] = image_url
+                            all_potential_candidates.append(item)
+                            country_candidates_selected_this_cycle.add(entry_id)
+                    else:
+                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
 
-                    for item_to_add in all_potential_candidates:
-                        person_name = item_to_add['person_name']
-                        post_label = item_to_add['post_label'] # Already standardized
-                        country_code = item_to_add['country_code']
-                        party = item_to_add['party']
-                        thumbnail = item_to_add['thumbnail']
+            logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates for initial seeding.")
+            random.shuffle(all_potential_candidates)
 
-                        # Check if item already exists in SQLite prayer_queue
-                        # Handle post_label being potentially NULL in DB if it was empty string
-                        if post_label == "":
-                            cursor.execute("SELECT id FROM prayer_queue WHERE person_name = ? AND post_label IS NULL AND country_code = ?",
-                                           (person_name, country_code))
-                        else:
-                            cursor.execute("SELECT id FROM prayer_queue WHERE person_name = ? AND post_label = ? AND country_code = ?",
-                                           (person_name, post_label, country_code))
+            items_added_to_db_this_cycle = 0
+            # Connection is already established and cursor is available
+            for item_to_add in all_potential_candidates:
+                person_name = item_to_add['person_name']
+                post_label = item_to_add['post_label'] # Already standardized to "" if None
+                country_code_add = item_to_add['country_code'] # Renamed to avoid conflict
+                party_add = item_to_add['party'] # Renamed
+                thumbnail_add = item_to_add['thumbnail'] # Renamed
 
-                        if cursor.fetchone() is None:
-                            # Item does not exist, insert it
-                            try:
-                                cursor.execute('''
-                                    INSERT INTO prayer_queue (person_name, post_label, country_code, party, thumbnail)
-                                    VALUES (?, ?, ?, ?, ?)
-                                ''', (person_name, post_label if post_label else None, country_code, party, thumbnail))
-                                conn.commit()
-                                logging.info(f"Added to SQLite prayer_queue: {person_name} (Post: {post_label}, Party: {party}) from {country_code}")
-                                items_added_to_db_this_cycle += 1
-                            except sqlite3.IntegrityError:
-                                # This might happen if another process/thread added it, or due to timing.
-                                logging.warning(f"IntegrityError when trying to insert {person_name} ({post_label}) for {country_code}. Item might already exist (race condition).")
-                            except sqlite3.Error as e:
-                                logging.error(f"SQLite error when inserting {person_name} ({post_label}): {e}")
-                        else:
-                            logging.debug(f"Item {person_name} ({post_label}) for {country_code} already exists in SQLite prayer_queue. Skipping.")
+                # Insert into prayer_candidates with status 'queued'
+                # initial_add_timestamp will be set by default by DB
+                # status_timestamp should be now as it's being added to queue now
+                current_ts_for_status = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                try:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO prayer_candidates
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp)
+                        VALUES (?, ?, ?, ?, ?, 'queued', ?)
+                    ''', (person_name, post_label if post_label else None, country_code_add, party_add, thumbnail_add, current_ts_for_status))
+                    if cursor.rowcount > 0:
+                        items_added_to_db_this_cycle += 1
+                except sqlite3.Error as e_insert: # Changed variable name
+                    logging.error(f"SQLite error during initial seeding into prayer_candidates for {person_name} ({post_label}): {e_insert}")
 
-                if items_added_to_db_this_cycle > 0:
-                    logging.info(f"Added {items_added_to_db_this_cycle} new items to the SQLite prayer_queue this cycle.")
+            if items_added_to_db_this_cycle > 0:
+                conn.commit() # Commit all successful inserts
+                logging.info(f"Added {items_added_to_db_this_cycle} new items to prayer_candidates with 'queued' status during initial seeding.")
 
-                # Query current size of SQLite queue for logging
-                current_db_queue_size = 0
-                if conn: # If connection was opened
-                    cursor.execute("SELECT COUNT(id) FROM prayer_queue")
-                    count_result = cursor.fetchone()
-                    if count_result:
-                        current_db_queue_size = count_result[0]
+            current_db_candidates_size = 0 # Renamed variable
+            cursor.execute("SELECT COUNT(id) FROM prayer_candidates WHERE status = 'queued'") # Check only 'queued'
+            count_result = cursor.fetchone()
+            if count_result:
+                current_db_candidates_size = count_result[0]
+            logging.info(f"Initial seeding process complete. Current 'queued' items in prayer_candidates: {current_db_candidates_size}")
 
-                logging.info(f"Update_queue cycle complete. Current SQLite prayer_queue size: {current_db_queue_size}")
-
-            except Exception as e:
-                logging.error(f"Unexpected error in update_queue thread: {e}", exc_info=True)
-            finally:
-                if conn:
-                    conn.close()
-                    logging.debug("SQLite connection closed in update_queue.")
-
-            time.sleep(90)
+        except Exception as e: # General exception
+            logging.error(f"Unexpected error in update_queue (initial seeding into prayer_candidates): {e}", exc_info=True)
+            if conn: # Rollback if error occurred during transaction
+                conn.rollback()
+        finally:
+            if conn:
+                conn.close()
+                logging.debug("SQLite connection closed in update_queue.")
+        # The while True loop and time.sleep(90) are removed.
 
 def load_prayed_for_data_from_db():
     """Loads all prayed-for items from the SQLite database into the global prayed_for_data."""
@@ -489,28 +585,30 @@ def load_prayed_for_data_from_db():
         conn = sqlite3.connect(DATABASE_URL)
         conn.row_factory = sqlite3.Row # Access columns by name
         cursor = conn.cursor()
-        cursor.execute("SELECT person_name, post_label, country_code, party, thumbnail, prayed_timestamp FROM prayed_items")
-
+        # Select from prayer_candidates with status 'prayed'
+        cursor.execute("""
+            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp
+            FROM prayer_candidates
+            WHERE status = 'prayed'
+        """)
         rows = cursor.fetchall()
         loaded_count = 0
         for row_data in rows:
             item = dict(row_data)
-            # Map prayed_timestamp from DB to 'timestamp' for consistency in current app logic
-            item['timestamp'] = item.pop('prayed_timestamp', None)
-
-            country_code = item.get('country_code')
-            if country_code in prayed_for_data:
-                prayed_for_data[country_code].append(item)
+            # 'timestamp' is already aliased from status_timestamp in the query
+            country_code_load = item.get('country_code') # Renamed variable
+            if country_code_load in prayed_for_data:
+                prayed_for_data[country_code_load].append(item)
                 loaded_count +=1
             else:
-                logging.warning(f"Found item in prayed_items table with unknown country_code: {country_code} - Item: {item.get('person_name')}")
+                logging.warning(f"Found item in prayer_candidates (status='prayed') with unknown country_code: {country_code_load} - Item: {item.get('person_name')}")
 
-        logging.info(f"Loaded {loaded_count} items from prayed_items DB into memory.")
-        for country_code_key in prayed_for_data:
-             logging.debug(f"Country {country_code_key} has {len(prayed_for_data[country_code_key])} prayed items in memory after DB load.")
+        logging.info(f"Loaded {loaded_count} items with status 'prayed' from prayer_candidates into memory.")
+        for country_code_key in prayed_for_data: # Use a different variable name
+             logging.debug(f"Country {country_code_key} has {len(prayed_for_data[country_code_key])} prayed items in memory after DB load from prayer_candidates.")
 
     except sqlite3.Error as e:
-        logging.error(f"SQLite error in load_prayed_for_data_from_db: {e}")
+        logging.error(f"SQLite error in load_prayed_for_data_from_db (reading prayer_candidates): {e}")
     except Exception as e_gen:
         logging.error(f"Unexpected error in load_prayed_for_data_from_db: {e_gen}", exc_info=True)
     finally:
@@ -571,19 +669,24 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
         conn_reload.row_factory = sqlite3.Row
         cursor_reload = conn_reload.cursor()
 
-        cursor_reload.execute("SELECT person_name, post_label, country_code, party, thumbnail, prayed_timestamp FROM prayed_items WHERE country_code = ?", (country_code_to_reload,))
+        # Select from prayer_candidates with status 'prayed' for the specific country
+        cursor_reload.execute("""
+            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp
+            FROM prayer_candidates
+            WHERE status = 'prayed' AND country_code = ?
+        """, (country_code_to_reload,))
 
         rows = cursor_reload.fetchall()
         loaded_count = 0
         for row_data in rows:
             item = dict(row_data)
-            item['timestamp'] = item.pop('prayed_timestamp', None)
+            # 'timestamp' is already aliased from status_timestamp
             prayed_for_data[country_code_to_reload].append(item)
             loaded_count += 1
-        logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} items for {country_code_to_reload} into prayed_for_data.")
+        logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} 'prayed' items for {country_code_to_reload} from prayer_candidates into prayed_for_data.")
 
     except sqlite3.Error as e:
-        logging.error(f"[reload_single_country_prayed_data_from_db] SQLite error for {country_code_to_reload}: {e}")
+        logging.error(f"[reload_single_country_prayed_data_from_db] SQLite error for {country_code_to_reload} (reading prayer_candidates): {e}")
     except Exception as e_gen:
         logging.error(f"[reload_single_country_prayed_data_from_db] Unexpected error for {country_code_to_reload}: {e_gen}", exc_info=True)
     finally:
@@ -729,41 +832,54 @@ def process_item():
         conn.row_factory = sqlite3.Row # Access columns by name
         cursor = conn.cursor()
 
-        # Fetch the oldest item
-        cursor.execute("SELECT * FROM prayer_queue ORDER BY added_timestamp ASC LIMIT 1")
+        # Fetch the oldest item with 'queued' status from prayer_candidates
+        cursor.execute("""
+            SELECT * FROM prayer_candidates
+            WHERE status = 'queued'
+            ORDER BY initial_add_timestamp ASC
+            LIMIT 1
+        """)
         row = cursor.fetchone()
 
         if row:
-            # Convert row to a dictionary
-            item = dict(row)
-            item_id_to_delete = item['id']
-            person_name_to_log = item.get('person_name', 'N/A')
-            logging.info(f"Fetched item from prayer_queue: ID={item_id_to_delete}, Name={person_name_to_log}")
+            item_to_process = dict(row)
+            item_id = item_to_process['id']
+            person_name_to_log = item_to_process.get('person_name', 'N/A')
+            country_code_item = item_to_process['country_code']
 
-            # Store details for use after deletion
-            processed_item_details = item.copy()
-            country_code_item = item['country_code']
+            logging.info(f"Fetched item from prayer_candidates (ID={item_id}, Name={person_name_to_log}) for processing.")
 
-            # Delete the item from the queue
-            cursor.execute("DELETE FROM prayer_queue WHERE id = ?", (item_id_to_delete,))
+            # Update status to 'prayed' and set status_timestamp
+            new_status_timestamp = datetime.now()
+            cursor.execute("""
+                UPDATE prayer_candidates
+                SET status = 'prayed', status_timestamp = ?
+                WHERE id = ?
+            """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), item_id))
             conn.commit()
-            logging.info(f"Successfully deleted item ID={item_id_to_delete}, Name={person_name_to_log} from prayer_queue DB table.")
+            logging.info(f"Updated item ID={item_id} to 'prayed' in prayer_candidates table.")
             item_processed = True
 
-            # Add timestamp for logging purposes (not stored in DB this way)
-            item['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # Prepare details for in-memory update and logging
+            processed_item_details = {
+                'person_name': item_to_process['person_name'],
+                'post_label': item_to_process.get('post_label'),
+                'country_code': country_code_item,
+                'party': item_to_process.get('party'),
+                'thumbnail': item_to_process.get('thumbnail'),
+                'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S') # For in-memory structure
+            }
 
-            # Add to SQLite prayed_items table
-            # add_prayed_item_to_db already logs success/failure, including IntegrityError
-            add_prayed_item_to_db(item)
+            # Also update in-memory prayed_for_data for current session consistency
+            if country_code_item in prayed_for_data:
+                prayed_for_data[country_code_item].append(processed_item_details)
+            else:
+                logging.warning(f"Country code {country_code_item} not found in prayed_for_data dictionary. Prayed item for {person_name_to_log} not added to in-memory list for this country.")
 
-            # Also update in-memory for current session consistency
-            prayed_for_data[country_code_item].append(item)
-
-            logging.info(f"Processed item from SQLite queue (ID={item_id_to_delete}, Name={person_name_to_log}), added to prayed_items DB and in-memory for country {COUNTRIES_CONFIG[country_code_item]['name']}")
+            logging.info(f"Processed item ID={item_id} (Name={person_name_to_log}), updated in prayer_candidates and in-memory for country {COUNTRIES_CONFIG.get(country_code_item, {}).get('name', country_code_item)}")
 
         else:
-            logging.info("No items in SQLite prayer_queue to process.")
+            logging.info("No items with status='queued' in prayer_candidates to process.")
 
     except sqlite3.Error as e:
         logging.error(f"SQLite error in /process_item: {e}")
@@ -786,20 +902,12 @@ def process_item():
             post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_plot)
 
             current_sqlite_queue_for_map = []
-            temp_conn_map = None # Renamed to avoid conflict with outer conn
-            try:
-                temp_conn_map = sqlite3.connect(DATABASE_URL)
-                temp_conn_map.row_factory = sqlite3.Row
-                temp_cursor_map = temp_conn_map.cursor() # Renamed cursor
-                temp_cursor_map.execute("SELECT person_name, post_label, country_code FROM prayer_queue")
-                current_sqlite_queue_for_map = [dict(item_row) for item_row in temp_cursor_map.fetchall()] # Renamed item
-            except sqlite3.Error as e_map_queue:
-                logging.error(f"SQLite error fetching queue for map plotting in /process_item: {e_map_queue}")
-            finally:
-                if temp_conn_map:
-                    temp_conn_map.close()
+            temp_conn_map = None
+            # Fetch current queue for map plotting using the updated function
+            current_sqlite_queue_for_map = get_current_queue_items_from_db()
+            logging.debug(f"[/process_item] Fetched {len(current_sqlite_queue_for_map)} items for queue display for map plotting.")
 
-            logging.debug(f"[/process_item] Attempting map update for country_code_plot: {country_code_plot}") # Changed from INFO to DEBUG
+            logging.debug(f"[/process_item] Attempting map update for country_code_plot: {country_code_plot}")
             if country_code_plot in prayed_for_data:
                 logging.debug(f"[/process_item] Size of prayed_for_data['{country_code_plot}'] for map: {len(prayed_for_data[country_code_plot])}") # Changed from INFO to DEBUG
             logging.debug(f"[/process_item] Number of current_sqlite_queue_for_map items for map: {len(current_sqlite_queue_for_map)}") # Changed from INFO to DEBUG
@@ -1005,13 +1113,16 @@ def purge_queue():
     try:
         conn = sqlite3.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM prayer_queue")
-        logging.info("Purged all items from SQLite prayer_queue table.")
-        cursor.execute("DELETE FROM prayed_items")
-        logging.info("Purged all items from SQLite prayed_items table.")
+        cursor.execute("DELETE FROM prayer_candidates")
+        logging.info("Purged all items from SQLite prayer_candidates table.")
+        # Removing old table purges:
+        # cursor.execute("DELETE FROM prayer_queue")
+        # logging.info("Purged all items from SQLite prayer_queue table.")
+        # cursor.execute("DELETE FROM prayed_items")
+        # logging.info("Purged all items from SQLite prayed_items table.")
         conn.commit()
     except sqlite3.Error as e:
-        logging.error(f"SQLite error during purge of prayer_queue and prayed_items tables: {e}")
+        logging.error(f"SQLite error during purge of prayer_candidates table: {e}")
         if conn:
             conn.rollback()
     finally:
@@ -1099,71 +1210,63 @@ def put_back_in_queue():
             #    logging.debug(f"[/put_back] No match for item #{i}. Name Match: {mem_person_name == person_name}, PostLabel Match: {mem_item_post_label_standardized == post_label_key_search}")
 
         db_conn = None # Rename to avoid conflict with outer 'conn' if it were used differently
-        if item_to_put_back_from_memory:
-            # Enhanced logging for put_back
-            logging.info(f"Preparing to put back item: {item_to_put_back_from_memory.get('person_name')} for country {item_country_code_from_form}.") # Kept as INFO
-            logging.debug(f"Index to remove from memory: {item_index_to_remove_from_memory}.") # Changed from INFO to DEBUG
-            if item_country_code_from_form in prayed_for_data:
-                logging.debug(f"Current length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.") # Changed from INFO to DEBUG
-            else:
-                logging.warning(f"Country code {item_country_code_from_form} not found in prayed_for_data for length logging.") # Kept as WARNING
+        if item_to_put_back_from_memory: # This is the item matched from in-memory prayed_for_data
+            logging.info(f"Preparing to put back item: {person_name} (PostLabel: {post_label_key_search}) for country {item_country_code_from_form}.")
 
+            db_conn = None
+            updated_in_db = False
             try:
                 db_conn = sqlite3.connect(DATABASE_URL)
                 cursor = db_conn.cursor()
 
-                # 1. Add item back to SQLite prayer_queue table
-                # Ensure all necessary fields are present from item_to_put_back_from_memory
-                # 'added_timestamp' for prayer_queue table will be set by default by SQLite
-                pq_person_name = item_to_put_back_from_memory['person_name']
-                # Use pq_post_label which is derived from stripped form input
-                # pq_post_label is already defined above using the stripped and processed form value
-                pq_country_code = item_country_code_from_form # From form, validated
-                pq_party = item_to_put_back_from_memory.get('party', 'Other')
-                pq_thumbnail = item_to_put_back_from_memory.get('thumbnail', HEART_IMG_PATH)
+                # Update status in prayer_candidates table
+                new_status_timestamp = datetime.now()
+                # Determine how to match post_label in the database (NULL vs empty string)
+                # The unique index uses (person_name, post_label, country_code).
+                # post_label_key_search holds "" for None/empty, which should match NULL if that's how it was stored during migration/initial add.
+                # However, direct comparison `post_label = ?` with `""` will not match `NULL`.
 
-                cursor.execute('''
-                    INSERT INTO prayer_queue (person_name, post_label, country_code, party, thumbnail)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (pq_person_name, pq_post_label, pq_country_code, pq_party, pq_thumbnail))
-                logging.info(f"Item {pq_person_name} (Post: {pq_post_label}) from {pq_country_code} re-added to SQLite prayer_queue.")
-
-                # 2. Delete item from prayed_items table in DB
-                # Use post_label_key_search for precise matching with what was in prayed_for_data (and thus in DB)
-                # If post_label_key_search is empty string, it should match NULL in DB if that's how it was stored.
-                # The unique index on prayed_items uses (person_name, post_label, country_code).
-                # We need to be careful with NULL vs empty string for post_label when deleting.
-                # Assuming post_label in prayed_items is NULL if it was originally empty string or None.
                 if post_label_key_search == "":
-                    cursor.execute('''
-                        DELETE FROM prayed_items
-                        WHERE person_name = ? AND post_label IS NULL AND country_code = ?
-                    ''', (person_name, item_country_code_from_form))
+                    cursor.execute("""
+                        UPDATE prayer_candidates
+                        SET status = 'queued', status_timestamp = ?
+                        WHERE person_name = ? AND post_label IS NULL AND country_code = ? AND status = 'prayed'
+                    """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, item_country_code_from_form))
                 else:
-                    cursor.execute('''
-                        DELETE FROM prayed_items
-                        WHERE person_name = ? AND post_label = ? AND country_code = ?
-                    ''', (person_name, post_label_key_search, item_country_code_from_form))
+                    cursor.execute("""
+                        UPDATE prayer_candidates
+                        SET status = 'queued', status_timestamp = ?
+                        WHERE person_name = ? AND post_label = ? AND country_code = ? AND status = 'prayed'
+                    """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, post_label_key_search, item_country_code_from_form))
 
-                logging.info(f"Item {person_name} (Post: {post_label_key_search}) from {item_country_code_from_form} removed from prayed_items DB table.")
+                if cursor.rowcount > 0:
+                    db_conn.commit()
+                    logging.info(f"Item {person_name} (Post: {post_label_key_search}) for {item_country_code_from_form} status updated to 'queued' in prayer_candidates.")
+                    updated_in_db = True
+                else:
+                    db_conn.rollback()
+                    logging.warning(f"Item {person_name} (Post: {post_label_key_search}) for {item_country_code_from_form} not found with status 'prayed' in prayer_candidates, or already 'queued'. No DB update made.")
 
-                db_conn.commit()
+            except sqlite3.Error as e:
+                logging.error(f"SQLite error in /put_back_in_queue when updating prayer_candidates for {person_name}: {e}")
+                if db_conn: db_conn.rollback()
+            finally:
+                if db_conn: db_conn.close()
 
-                # 3. Remove from in-memory prayed_for_data
+            if updated_in_db:
+                # Remove from in-memory prayed_for_data (this list should only contain 'prayed' items)
                 if item_index_to_remove_from_memory != -1 and item_country_code_from_form in prayed_for_data:
                     prayed_for_data[item_country_code_from_form].pop(item_index_to_remove_from_memory)
-                    logging.debug(f"Attempted pop from in-memory prayed_for_data for {item_to_put_back_from_memory.get('person_name')}.") # Changed from INFO to DEBUG
-                    logging.debug(f"New length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.") # Changed from INFO to DEBUG
-                elif item_country_code_from_form not in prayed_for_data:
-                    logging.warning(f"Cannot pop from prayed_for_data: country code {item_country_code_from_form} not found.") # Kept as WARNING
-                else: # item_index_to_remove_from_memory was -1
-                    logging.warning(f"Did not pop from prayed_for_data for {item_to_put_back_from_memory.get('person_name')} as item_index_to_remove_from_memory was -1.") # Kept as WARNING
-                # Existing logging for successful removal is now covered by the above.
+                    logging.debug(f"Removed item from in-memory prayed_for_data: {person_name} for {item_country_code_from_form}.")
+                    logging.debug(f"New length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.")
+                else:
+                    logging.warning(f"Could not remove {person_name} from in-memory prayed_for_data: index {item_index_to_remove_from_memory} or country {item_country_code_from_form} invalid.")
 
-                # Force reload of this country's prayed_for_data from DB to ensure consistency
+                # It might be simpler to just reload this country's prayed data
+                # reload_single_country_prayed_data_from_db is now updated.
                 reload_single_country_prayed_data_from_db(item_country_code_from_form)
 
-                # Map plotting (already there)
+                # Map plotting
                 hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
                 post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form)
                 current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db() # Fetch updated queue
