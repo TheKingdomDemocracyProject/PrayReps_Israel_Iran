@@ -615,45 +615,6 @@ def load_prayed_for_data_from_db():
         if conn:
             conn.close()
 
-def add_prayed_item_to_db(item):
-    """Adds a single prayed-for item to the prayed_items SQLite table."""
-    conn = None
-    try:
-        conn = sqlite3.connect(DATABASE_URL)
-        cursor = conn.cursor()
-
-        # Ensure 'timestamp' from item is used for 'prayed_timestamp'
-        prayed_timestamp_val = item.get('timestamp')
-        if not prayed_timestamp_val:
-            # Fallback if 'timestamp' is somehow missing, though process_item should set it
-            prayed_timestamp_val = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            logging.warning(f"Item for {item.get('person_name')} missing 'timestamp', using current time for prayed_timestamp.")
-
-        cursor.execute('''
-            INSERT INTO prayed_items (person_name, post_label, country_code, party, thumbnail, prayed_timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (item.get('person_name'),
-              item.get('post_label'),
-              item.get('country_code'),
-              item.get('party'),
-              item.get('thumbnail'),
-              prayed_timestamp_val))
-        conn.commit()
-        logging.info(f"Added item to prayed_items DB: {item.get('person_name')} for {item.get('country_code')}")
-    except sqlite3.IntegrityError:
-        logging.warning(f"IntegrityError: Item {item.get('person_name')} for {item.get('country_code')} likely already exists in prayed_items DB. Not re-added.")
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error in add_prayed_item_to_db for {item.get('person_name')}: {e}")
-        if conn:
-            conn.rollback()
-    except Exception as e_gen:
-        logging.error(f"Unexpected error in add_prayed_item_to_db: {e_gen}", exc_info=True)
-        if conn:
-            conn.rollback()
-    finally:
-        if conn:
-            conn.close()
-
 def reload_single_country_prayed_data_from_db(country_code_to_reload):
     global prayed_for_data
     if country_code_to_reload not in prayed_for_data:
@@ -1279,21 +1240,10 @@ def put_back_in_queue():
                         current_sqlite_queue_for_map_put_back,
                         item_country_code_from_form
                     )
-
-            except sqlite3.IntegrityError as ie: # Specifically for INSERT into prayer_queue
-                logging.warning(f"IntegrityError when re-adding {person_name} to prayer_queue (likely already there): {ie}")
-                # If it's already in prayer_queue, we probably should not proceed with removing from prayed_items
-                # or prayed_for_data, as it implies a double "put_back" or inconsistent state.
-                # For now, just log and don't change other states if this specific error occurs.
-                if db_conn: db_conn.rollback()
-            except sqlite3.Error as e:
-                logging.error(f"SQLite error in /put_back_in_queue for {person_name}: {e}")
-                if db_conn: db_conn.rollback()
-            except Exception as e_main:
-                logging.error(f"Unexpected error in /put_back_in_queue: {e_main}", exc_info=True)
-                if db_conn: db_conn.rollback()
-            finally:
-                if db_conn: db_conn.close()
+            # The orphaned except/finally blocks that were here have been removed.
+            # The primary try...except...finally for database operations within the
+            # `if updated_in_db:` block (or the outer `if item_to_put_back_from_memory:`)
+            # correctly handles SQLite errors for the main transaction.
         else:
             logging.warning(f"Could not find item for {person_name} (Post: {post_label_key_search}) in memory for {item_country_code_from_form} to put back in /put_back.")
 
