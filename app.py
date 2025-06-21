@@ -508,6 +508,18 @@ def update_queue():
             # The above check is removed to allow update_queue to always run fully.
             logging.info("[update_queue] Proceeding with data population from CSVs.")
 
+            # Fetch identifiers of already prayed individuals
+            cursor.execute("SELECT person_name, post_label, country_code FROM prayer_candidates WHERE status = 'prayed'")
+            already_prayed_records = cursor.fetchall()
+            already_prayed_ids = set()
+            for record in already_prayed_records:
+                # Normalize post_label for consistent set storage and lookup: use empty string if None
+                pn = record['person_name']
+                pl = record['post_label'] if record['post_label'] is not None else "" # Match how it might be checked later
+                cc = record['country_code']
+                already_prayed_ids.add((pn, pl, cc))
+            logging.info(f"[update_queue] Found {len(already_prayed_ids)} individuals already marked as 'prayed'.")
+
             all_potential_candidates = []
             # Phase 1: Collect all potential candidates from all countries
             for country_code_collect in COUNTRIES_CONFIG.keys():
@@ -522,41 +534,58 @@ def update_queue():
                     logging.warning(f"'total_representatives' not configured for {country_code_collect}. Using all entries from CSV.")
                     df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if no cap
                 elif len(df_raw) > num_to_select:
-                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries, selecting {num_to_select} randomly.")
+                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries, selecting {num_to_select} randomly (before filtering prayed).")
                     df_sampled = df_raw.sample(n=num_to_select).reset_index(drop=True)
                 else:
-                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries (<= {num_to_select}). Taking all and shuffling.")
+                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries (<= {num_to_select}). Taking all and shuffling (before filtering prayed).")
                     df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if fewer than cap
 
-                logging.info(f"Selected {len(df_sampled)} individuals from {country_code_collect} CSV to be added to queue.")
+                logging.info(f"Selected {len(df_sampled)} individuals from {country_code_collect} CSV (before filtering prayed).")
 
                 for index, row in df_sampled.iterrows(): # Iterate over the (potentially) sampled DataFrame
                     if row.get('person_name'):
                         item = row.to_dict()
                         item['country_code'] = country_code_collect
-                        if not item.get('party'):
+                        if not item.get('party'): # Standardize party
                             item['party'] = 'Other'
 
-                        # Standardize post_label: use None if it's effectively empty or truly None.
-                        # The database schema's UNIQUE constraint handles NULLs correctly.
-                        item_post_label_val = item.get('post_label')
-                        if isinstance(item_post_label_val, str) and not item_post_label_val.strip():
-                            item['post_label'] = None
-                        elif item_post_label_val is None:
-                            item['post_label'] = None
-                        # Else, keep original string value for post_label
+                        # Prepare for already_prayed_ids check
+                        current_person_name = item['person_name']
+                        current_post_label_raw = item.get('post_label')
 
-                        image_url = item.get('image_url', HEART_IMG_PATH) # HEART_IMG_PATH is a global
-                        if not image_url: # Ensure thumbnail is never empty if image_url was empty string
-                            image_url = HEART_IMG_PATH
-                        item['thumbnail'] = image_url
-                        all_potential_candidates.append(item)
+                        # Normalize post_label from CSV item for comparison with already_prayed_ids keys
+                        if isinstance(current_post_label_raw, str) and not current_post_label_raw.strip():
+                            post_label_for_check = ""
+                        elif current_post_label_raw is None:
+                            post_label_for_check = ""
+                        else:
+                            post_label_for_check = current_post_label_raw # Keep original potentially unstripped for check if that's how it's stored
+                                                                        # The key is consistency with how already_prayed_ids are created.
+                                                                        # already_prayed_ids uses `pl if pl is not None else ""`. So this should match.
+
+                        candidate_id_tuple = (current_person_name, post_label_for_check, item['country_code'])
+
+                        if candidate_id_tuple not in already_prayed_ids:
+                            # Standardize item['post_label'] for DB storage (applies if it's added to queue)
+                            if isinstance(current_post_label_raw, str) and not current_post_label_raw.strip():
+                                item['post_label'] = None
+                            elif current_post_label_raw is None:
+                                item['post_label'] = None
+                            # Else: item['post_label'] is already the correct string from current_post_label_raw via to_dict()
+
+                            image_url = item.get('image_url', HEART_IMG_PATH) # HEART_IMG_PATH is a global
+                            if not image_url: # Ensure thumbnail is never empty if image_url was empty string
+                                image_url = HEART_IMG_PATH
+                            item['thumbnail'] = image_url
+                            all_potential_candidates.append(item)
+                        else:
+                            logging.debug(f"[update_queue] Skipped {candidate_id_tuple} from CSV for {country_code_collect}; already prayed for.")
                     else:
                         logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index} in sampled data: {row.to_dict()}")
 
-            logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates for initial seeding.")
+            logging.info(f"[update_queue] Collected {len(all_potential_candidates)} new potential candidates after filtering out prayed ones.") # Updated log
             random.shuffle(all_potential_candidates)
-            logging.info(f"[update_queue] Collected {len(all_potential_candidates)} total potential new candidates from CSVs for initial seeding.")
+            # logging.info(f"[update_queue] Collected {len(all_potential_candidates)} total potential new candidates from CSVs for initial seeding.") # Old log, replaced by above
 
             items_added_to_db_this_cycle = 0
             # Connection is already established and cursor is available
@@ -821,106 +850,94 @@ def get_queue_json():
 def process_item():
     conn = None
     item_processed = False
-    processed_item_details = {} # To store details for logging and map plotting
+    processed_item_details = {}
+    item_id_to_process_str = request.form.get('item_id') # Renamed for clarity
+    item_id_to_process = None # Initialize for use in logging in case of early error
+
+    if not item_id_to_process_str:
+        logging.error("/process_item: Missing 'item_id' in POST request.")
+        return jsonify(error="Missing item_id"), 400
+
+    try:
+        item_id_to_process = int(item_id_to_process_str)
+    except ValueError:
+        logging.error(f"/process_item: Invalid 'item_id' format: {item_id_to_process_str}.")
+        return jsonify(error="Invalid item_id format"), 400
 
     try:
         conn = sqlite3.connect(DATABASE_URL)
-        conn.row_factory = sqlite3.Row # Access columns by name
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Fetch the oldest item with 'queued' status from prayer_candidates
-        cursor.execute("""
-            SELECT * FROM prayer_candidates
-            WHERE status = 'queued'
-            ORDER BY initial_add_timestamp ASC
-            LIMIT 1
-        """)
+        # Fetch the item's details first and ensure it's 'queued'
+        cursor.execute("SELECT * FROM prayer_candidates WHERE id = ? AND status = 'queued'", (item_id_to_process,))
         row = cursor.fetchone()
 
         if row:
             item_to_process = dict(row)
-            item_id = item_to_process['id']
             person_name_to_log = item_to_process.get('person_name', 'N/A')
             country_code_item = item_to_process['country_code']
+            logging.info(f"Attempting to process item ID={item_id_to_process} (Name={person_name_to_log}) as requested by frontend.")
 
-            logging.info(f"Fetched item from prayer_candidates (ID={item_id}, Name={person_name_to_log}) for processing.")
-
-            # Update status to 'prayed' and set status_timestamp
             new_status_timestamp = datetime.now()
             cursor.execute("""
                 UPDATE prayer_candidates
                 SET status = 'prayed', status_timestamp = ?
-                WHERE id = ?
-            """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), item_id))
-            conn.commit()
-            logging.info(f"Updated item ID={item_id} to 'prayed' in prayer_candidates table.")
-            item_processed = True
+                WHERE id = ? AND status = 'queued'
+            """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), item_id_to_process))
 
-            # Prepare details for in-memory update and logging
-            processed_item_details = {
-                'person_name': item_to_process['person_name'],
-                'post_label': item_to_process.get('post_label'),
-                'country_code': country_code_item,
-                'party': item_to_process.get('party'),
-                'thumbnail': item_to_process.get('thumbnail'),
-                'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S') # For in-memory structure
-            }
+            if cursor.rowcount > 0:
+                conn.commit()
+                logging.info(f"Successfully updated item ID={item_id_to_process} to 'prayed'.")
+                item_processed = True
+                processed_item_details = {
+                    'person_name': item_to_process['person_name'],
+                    'post_label': item_to_process.get('post_label'),
+                    'country_code': country_code_item,
+                    'party': item_to_process.get('party'),
+                    'thumbnail': item_to_process.get('thumbnail'),
+                    'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                }
+                if country_code_item in prayed_for_data:
+                    prayed_for_data[country_code_item].append(processed_item_details)
+                # else: logging for unknown country_code_item already exists or can be added
 
-            # Also update in-memory prayed_for_data for current session consistency
-            if country_code_item in prayed_for_data:
-                prayed_for_data[country_code_item].append(processed_item_details)
             else:
-                logging.warning(f"Country code {country_code_item} not found in prayed_for_data dictionary. Prayed item for {person_name_to_log} not added to in-memory list for this country.")
-
-            logging.info(f"Processed item ID={item_id} (Name={person_name_to_log}), updated in prayer_candidates and in-memory for country {COUNTRIES_CONFIG.get(country_code_item, {}).get('name', country_code_item)}")
-
+                conn.rollback()
+                logging.warning(f"Item ID={item_id_to_process} (Name={person_name_to_log}) was not updated to 'prayed'; status may have changed or item no longer exists as 'queued'.")
         else:
-            logging.info("No items with status='queued' in prayer_candidates to process.")
+            logging.warning(f"/process_item: Item with ID={item_id_to_process} not found or not in 'queued' state at time of selection.")
 
     except sqlite3.Error as e:
-        logging.error(f"SQLite error in /process_item: {e}")
-        if conn:
-            conn.rollback() # Rollback on error
+        logging.error(f"SQLite error in /process_item for ID={item_id_to_process}: {e}", exc_info=True) # Added exc_info
+        if conn: conn.rollback()
     except Exception as e:
-        logging.error(f"Unexpected error in /process_item: {e}", exc_info=True)
-        if conn:
-            conn.rollback()
+        logging.error(f"Unexpected error in /process_item for ID={item_id_to_process}: {e}", exc_info=True)
+        if conn: conn.rollback()
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
     if item_processed and processed_item_details:
-        # Plot map for the specific country of the processed item
+        # Map plotting logic (remains largely the same, uses processed_item_details)
         try:
-            # Plot map for the specific country of the processed item
             country_code_plot = processed_item_details['country_code']
             hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_plot)
             post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_plot)
-
-            current_sqlite_queue_for_map = []
-            temp_conn_map = None
-            # Fetch current queue for map plotting using the updated function
+            # The queue for map plotting is the *new* state of the overall queue
             current_sqlite_queue_for_map = get_current_queue_items_from_db()
-            logging.debug(f"[/process_item] Fetched {len(current_sqlite_queue_for_map)} items for queue display for map plotting.")
 
-            logging.debug(f"[/process_item] Attempting map update for country_code_plot: {country_code_plot}")
-            if country_code_plot in prayed_for_data:
-                logging.debug(f"[/process_item] Size of prayed_for_data['{country_code_plot}'] for map: {len(prayed_for_data[country_code_plot])}") # Changed from INFO to DEBUG
-            logging.debug(f"[/process_item] Number of current_sqlite_queue_for_map items for map: {len(current_sqlite_queue_for_map)}") # Changed from INFO to DEBUG
-
-            if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None: # post_label_df can be empty for IR/ISR
+            logging.debug(f"[/process_item] Map update for country: {country_code_plot} after processing ID={item_id_to_process}")
+            if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
                 plot_hex_map_with_hearts(
                     hex_map_gdf,
                     post_label_df,
-                    prayed_for_data[country_code_plot],
-                    current_sqlite_queue_for_map,
+                    prayed_for_data[country_code_plot], # Updated prayed list for this country
+                    current_sqlite_queue_for_map,    # Freshly fetched overall queue
                     country_code_plot
                 )
-            else:
-                logging.warning(f"Map data for {country_code_plot} not loaded or incomplete. Skipping map plot after processing.")
+            # else: logging for missing map data already exists
         except Exception as e_map_plotting:
-            logging.error(f"Error during map plotting in /process_item for {processed_item_details.get('person_name')}: {e_map_plotting}", exc_info=True)
-            # Continue to return success for item processing even if map plotting fails
+            logging.error(f"Error during map plotting in /process_item for ID={item_id_to_process}: {e_map_plotting}", exc_info=True)
 
     return '', 204
 

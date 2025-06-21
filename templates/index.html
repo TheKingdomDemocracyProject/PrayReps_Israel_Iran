@@ -39,6 +39,7 @@
         let processedCount = {{ (all_countries.values() | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
         const totalRepresentativesAllCountries = {{ (all_countries.values() | sum(attribute='total_representatives')) }};
         let currently_displayed_map_country_code = {{ initial_map_country_code | tojson }};
+        let currentlyDisplayedItemID = null;
 
 
         function updateQueueInfo() {
@@ -56,6 +57,7 @@
                         document.getElementById('queue_size').innerText = data.length;
                         if (data.length > 0) {
                             const current = data[0];
+                            currentlyDisplayedItemID = current.id; // STORE THE ID
                             const new_person_country_code = current.country_code; // Use a distinct name for clarity
                             const countryName = (allCountriesConfig && allCountriesConfig[new_person_country_code]) ? allCountriesConfig[new_person_country_code].name : 'Unknown Country';
 
@@ -100,6 +102,7 @@
                         } else {
                             document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
                             document.getElementById('next-button').style.display = 'none';
+                            currentlyDisplayedItemID = null; // Reset if queue is empty
                             // NO reloadHexMap() here anymore if queue is empty during polling
                         }
                     } else {
@@ -125,43 +128,51 @@
         }
 
         function nextConstituency() {
-            fetch('/process_item', { method: 'POST' })
-                .then(response => { // Added response parameter to check if needed, though original didn't use it
-                    if (!response.ok) { // Basic error check for the POST itself
-                        console.error('Process item request failed:', response.statusText);
-                        // Optionally update UI to indicate failure or retry
-                        return; // Stop further processing in this chain
-                    }
-                    processedCount++;
-                    const remainingElement = document.getElementById('remaining');
-                    let currentRemaining = parseInt(remainingElement.innerText);
-                    if (!isNaN(currentRemaining)) {
-                        remainingElement.innerText = Math.max(0, currentRemaining - 1);
-                    }
+            if (currentlyDisplayedItemID === null) {
+                console.error('No item ID is currently displayed. Cannot process.');
+                // Optionally, refresh queue info to try and get an item
+                // updateQueueInfo();
+                return;
+            }
 
-                    // Fetch and log the next item from /queue/json
-                    fetch('/queue/json')
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data && Array.isArray(data) && data.length > 0) {
-                                console.log('Next item from queue/json after process_item:', data[0]);
-                            } else if (data && Array.isArray(data) && data.length === 0) {
-                                console.log('Queue is empty after process_item.');
-                            } else {
-                                console.log('Unexpected data format from queue/json after process_item:', data);
-                            }
-                            updateQueueInfo(); // Call updateQueueInfo to refresh UI text and potentially country map
-                            reloadHexMap();   // Explicitly reload map image as /process_item updated it
-                        })
-                        .catch(error => {
-                            console.error('Error fetching queue/json after processing item:', error);
-                            updateQueueInfo(); // Still call updateQueueInfo to refresh UI
-                            reloadHexMap();   // Still reload map as /process_item likely succeeded
-                        });
-                })
-                .catch(error => {
-                    console.error('Error processing item:', error);
-                });
+            const formData = new FormData();
+            formData.append('item_id', currentlyDisplayedItemID);
+
+            fetch('/process_item', {
+                method: 'POST',
+                body: formData // Send item_id in the form data
+            })
+            .then(response => {
+                if (!response.ok) {
+                    console.error('Process item request failed:', response.statusText);
+                    // If process_item fails (e.g. 400 due to bad ID, or 500),
+                    // we might not want to proceed with UI updates as if it succeeded.
+                    // Consider how to handle this. For now, it will still try to update queue.
+                }
+                // Regardless of process_item success for now, update UI based on new queue state.
+                // A more robust error handling might involve checking response.json() if process_item returned one.
+                processedCount++;
+                const remainingElement = document.getElementById('remaining');
+                let currentRemaining = parseInt(remainingElement.innerText);
+                if (!isNaN(currentRemaining)) {
+                    remainingElement.innerText = Math.max(0, currentRemaining - 1);
+                }
+
+                fetch('/queue/json')
+                    .then(response => response.json())
+                    .then(data => {
+                        updateQueueInfo(); // Refreshes display with new item, and stores new currentlyDisplayedItemID
+                        reloadHexMap();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching queue/json after processing item:', error);
+                        updateQueueInfo();
+                        reloadHexMap();
+                    });
+            })
+            .catch(error => {
+                console.error('Error in /process_item fetch:', error); // Changed log message
+            });
         }
 
         function purgeQueue() {
