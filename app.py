@@ -1241,17 +1241,17 @@ def put_back_in_queue():
 
             # Map plotting
             hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
-                post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form)
-                current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db()
+            post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form) # Corrected Indentation
+            current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db() # Corrected Indentation
 
-                if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
-                    plot_hex_map_with_hearts(
-                        hex_map_gdf,
-                        post_label_df,
-                        prayed_for_data[item_country_code_from_form],
-                        current_sqlite_queue_for_map_put_back,
-                        item_country_code_from_form
-                    )
+            if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None: # Corrected Indentation
+                plot_hex_map_with_hearts( # Corrected Indentation
+                    hex_map_gdf,
+                    post_label_df,
+                    prayed_for_data[item_country_code_from_form],
+                    current_sqlite_queue_for_map_put_back,
+                    item_country_code_from_form
+                )
         # else: (if not updated_in_db)
             # No need to update memory or plot map if DB wasn't changed.
             # The warning log about no DB update made is sufficient.
