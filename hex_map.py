@@ -59,11 +59,33 @@ def load_random_heart_image():
 
 # Plot hex map with white fill color and light grey boundaries
 def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_items_list, queue_items_list, country_code):
+    # output_filename = "hex_map.png" # This can be defined later or stay if needed for path logging
+    # output_path = os.path.join(APP_ROOT, 'static', output_filename) # Same as above
+
+    logging.debug(f"Plotting hex map for country {country_code}. Prayed: {len(prayed_for_items_list)}, Queue: {len(queue_items_list)}") # Moved initial log up
+
+    if hex_map_gdf is None or hex_map_gdf.empty:
+        logging.error(f"Cannot plot map for {country_code}: hex_map_gdf is None or empty.")
+        # Attempt to save a blank or placeholder image to avoid broken image links,
+        # or ensure calling functions handle this. For now, just return.
+        # To create a placeholder image:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        ax.text(0.5, 0.5, f"Map data unavailable\nfor {country_code}", ha='center', va='center', fontsize=20, color='red')
+        ax.set_axis_off()
+        output_path_for_error = os.path.join(APP_ROOT, 'static', "hex_map.png") # Define here for error case
+        try:
+            plt.savefig(output_path_for_error, bbox_inches='tight', pad_inches=0.5, dpi=100)
+            logging.info(f"Saved placeholder map to {output_path_for_error} due to missing map data for {country_code}.")
+        except Exception as e_save_placeholder:
+            logging.error(f"Failed to save placeholder map for {country_code}: {e_save_placeholder}")
+        finally:
+            plt.close(fig) # Ensure figure is closed
+        return
+
+    # Define output_filename and output_path here if not defined before the check
     output_filename = "hex_map.png"
     output_path = os.path.join(APP_ROOT, 'static', output_filename)
-
-    logging.debug(f"Plotting hex map for country {country_code}. Target output path: {output_path}")
-
+    # ... rest of the function starting with logging about file existence ...
     # Log file details BEFORE saving
     if os.path.exists(output_path):
         try:
@@ -96,9 +118,25 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
         # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
         # Random Allocation Strategy
         if 'id' not in hex_map_gdf.columns:
-            logging.error(f"'id' column missing in hex_map_gdf for {country_code}. Cannot apply random allocation.")
-            plt.close(fig)
-            return
+            logging.error(f"'id' column missing in hex_map_gdf for {country_code}. Cannot apply random allocation strategy (hearts/highlights). Map will be blank.")
+            # Plot the base map without hearts/highlights
+            # fig, ax = plt.subplots(1, 1, figsize=(10, 10)) # Already have fig, ax
+            fig.patch.set_facecolor('white')
+            ax.set_facecolor('white')
+            hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
+            ax.set_axis_off()
+            bounds = hex_map_gdf.geometry.total_bounds
+            ax.set_xlim(bounds[0], bounds[2])
+            ax.set_ylim(bounds[1], bounds[3])
+            ax.set_aspect('equal')
+            try:
+                plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
+                logging.info(f"Saved map for {country_code} without hearts/highlights due to missing 'id' column.")
+            except Exception as e_save_no_id:
+                logging.error(f"Failed to save map for {country_code} (no 'id' column): {e_save_no_id}")
+            finally:
+                plt.close(fig) # Ensure figure is closed
+            return # Exit plotting for this country
 
         num_hearts = len(prayed_for_items_list)
         # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
