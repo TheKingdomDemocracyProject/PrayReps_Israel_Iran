@@ -498,36 +498,48 @@ def update_queue():
             all_potential_candidates = []
             # Phase 1: Collect all potential candidates from all countries
             for country_code_collect in COUNTRIES_CONFIG.keys():
-                df_update = fetch_csv(country_code_collect)
-                if df_update.empty:
-                    logging.debug(f"No CSV data for {country_code_collect} during initial seeding.")
+                df_raw = fetch_csv(country_code_collect) # Renamed to df_raw
+                if df_raw.empty:
+                    logging.warning(f"CSV data for {country_code_collect} is empty. Skipping for initial seeding.") # Changed to warning
                     continue
 
-                df_update = df_update.sample(frac=1).reset_index(drop=True)
-                current_prayed_for_ids = {(item['person_name'], item.get('post_label', '')) for item in prayed_for_data[country_code_collect]}
-                country_candidates_selected_this_cycle = set()
+                # Get the number of representatives to select for this country
+                num_to_select = COUNTRIES_CONFIG[country_code_collect].get('total_representatives')
+                if num_to_select is None:
+                    logging.warning(f"'total_representatives' not configured for {country_code_collect}. Using all entries from CSV.")
+                    df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if no cap
+                elif len(df_raw) > num_to_select:
+                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries, selecting {num_to_select} randomly.")
+                    df_sampled = df_raw.sample(n=num_to_select).reset_index(drop=True)
+                else:
+                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries (<= {num_to_select}). Taking all and shuffling.")
+                    df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if fewer than cap
 
-                for index, row in df_update.iterrows():
+                logging.info(f"Selected {len(df_sampled)} individuals from {country_code_collect} CSV to be added to queue.")
+
+                for index, row in df_sampled.iterrows(): # Iterate over the (potentially) sampled DataFrame
                     if row.get('person_name'):
                         item = row.to_dict()
                         item['country_code'] = country_code_collect
                         if not item.get('party'):
                             item['party'] = 'Other'
 
-                        item_post_label = item.get('post_label') if item.get('post_label') is not None else ""
-                        item['post_label'] = item_post_label
-                        entry_id = (item['person_name'], item_post_label)
+                        # Standardize post_label: use None if it's effectively empty or truly None.
+                        # The database schema's UNIQUE constraint handles NULLs correctly.
+                        item_post_label_val = item.get('post_label')
+                        if isinstance(item_post_label_val, str) and not item_post_label_val.strip():
+                            item['post_label'] = None
+                        elif item_post_label_val is None:
+                            item['post_label'] = None
+                        # Else, keep original string value for post_label
 
-                        if entry_id not in current_prayed_for_ids and \
-                           entry_id not in country_candidates_selected_this_cycle:
-                            image_url = item.get('image_url', HEART_IMG_PATH)
-                            if not image_url:
-                                image_url = HEART_IMG_PATH
-                            item['thumbnail'] = image_url
-                            all_potential_candidates.append(item)
-                            country_candidates_selected_this_cycle.add(entry_id)
+                        image_url = item.get('image_url', HEART_IMG_PATH) # HEART_IMG_PATH is a global
+                        if not image_url: # Ensure thumbnail is never empty if image_url was empty string
+                            image_url = HEART_IMG_PATH
+                        item['thumbnail'] = image_url
+                        all_potential_candidates.append(item)
                     else:
-                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index}: {row.to_dict()}")
+                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index} in sampled data: {row.to_dict()}")
 
             logging.debug(f"Collected {len(all_potential_candidates)} total potential new candidates for initial seeding.")
             random.shuffle(all_potential_candidates)
@@ -1144,124 +1156,108 @@ def put_back_in_queue():
     if person_name:
         person_name = person_name.strip()
 
-    _post_label_from_form_stripped = None
-    if post_label_form is not None: # Ensure not to strip None, only actual strings
-        _post_label_from_form_stripped = post_label_form.strip()
+    # _post_label_from_form_stripped = None
+    # if post_label_form is not None: # Ensure not to strip None, only actual strings
+    #     _post_label_from_form_stripped = post_label_form.strip()
         # If stripping makes it empty, it will be handled by later logic converting "" to None for DB
 
     if not item_country_code_from_form or item_country_code_from_form not in COUNTRIES_CONFIG:
         logging.error(f"Invalid or missing country_code '{item_country_code_from_form}' in put_back request form.")
     else:
-        # For searching in memory (where "" is used for None) and deleting from prayed_items
-        post_label_key_search = _post_label_from_form_stripped if _post_label_from_form_stripped else ""
+        # For searching in memory (if still needed for item_to_put_back_from_memory)
+        # This part is less critical if we trust the form values for the DB operation primarily.
+        # Keep the existing logic for post_label_key_search for in-memory lookup if it's used.
+        _post_label_from_form_stripped_for_mem_search = None
+        if post_label_form is not None:
+            _post_label_from_form_stripped_for_mem_search = post_label_form.strip()
+        # post_label_key_search_for_memory is used for the initial in-memory lookup if that logic path is still heavily relied upon.
+        post_label_key_search_for_memory = _post_label_from_form_stripped_for_mem_search if _post_label_from_form_stripped_for_mem_search else ""
 
-        # For inserting into prayer_queue (where NULL is preferred over "")
-        pq_post_label = _post_label_from_form_stripped if _post_label_from_form_stripped else None
 
-        # No need to call read_log here, data is in memory from initial load.
+        # --- Start of new DB query logic for post_label ---
+        query_post_label_value_for_db = None
+        is_post_label_null_in_db_query = False
+        log_display_post_label = "" # For logging
 
+        if post_label_form is None or not post_label_form.strip(): # Catches None, "", "   " submitted from form
+            is_post_label_null_in_db_query = True
+            log_display_post_label = "NULL"
+        else:
+            # Use the raw value from the form for the DB query, as this matches what's in item.post_label
+            query_post_label_value_for_db = post_label_form
+            log_display_post_label = f"'{post_label_form}'" # Use f-string for clarity
+
+        # This logging uses log_display_post_label for clarity on what's being queried
+        logging.info(f"Preparing to put back item: Name='{person_name}', PostLabel for DB Query={log_display_post_label}, Country='{item_country_code_from_form}'.")
+        # --- End of new DB query logic for post_label ---
+
+        # The part finding item_to_put_back_from_memory can remain as is, using post_label_key_search_for_memory
+        # This section is primarily for fetching the full item details if needed, though not strictly required if keys are sufficient.
         item_to_put_back_from_memory = None
-        item_index_to_remove_from_memory = -1
-        current_country_prayed_list = prayed_for_data.get(item_country_code_from_form, [])
+        item_index_to_remove_from_memory = -1 # Reset or ensure this is correctly handled if memory op depends on it
+        # current_country_prayed_list = prayed_for_data.get(item_country_code_from_form, []) # Example of getting the list
+        # (Original logic for finding item_to_put_back_from_memory and item_index_to_remove_from_memory would go here if it's essential)
+        # For now, we are focusing on the DB update being correct based on form values.
 
-        # Log details of what is being searched for from the form
-        logging.debug(f"[/put_back] Searching for item to remove: Name='{person_name}', PostLabel(form)='{post_label_form}', StandardizedPostLabelSearch='{post_label_key_search}', Country='{item_country_code_from_form}'") # Changed from INFO to DEBUG
 
-        for i, item_in_memory in enumerate(current_country_prayed_list):
-            mem_person_name = item_in_memory.get('person_name')
-            original_mem_post_label = item_in_memory.get('post_label') # Original value from memory
-            mem_item_post_label_standardized = original_mem_post_label if original_mem_post_label is not None else ""
+        # Database operation
+        db_conn = None
+        updated_in_db = False
+        try:
+            db_conn = sqlite3.connect(DATABASE_URL)
+            cursor = db_conn.cursor()
+            new_status_timestamp = datetime.now()
 
-            # Detailed log for each item being checked in memory
-            logging.debug(f"[/put_back] Checking in-memory item #{i}: Name='{mem_person_name}', OriginalPostLabel='{original_mem_post_label}', StandardizedPostLabel='{mem_item_post_label_standardized}'") # Kept as DEBUG
+            if is_post_label_null_in_db_query:
+                cursor.execute("""
+                    UPDATE prayer_candidates
+                    SET status = 'queued', status_timestamp = ?
+                    WHERE person_name = ? AND post_label IS NULL AND country_code = ? AND status = 'prayed'
+                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, item_country_code_from_form))
+            else:
+                cursor.execute("""
+                    UPDATE prayer_candidates
+                    SET status = 'queued', status_timestamp = ?
+                    WHERE person_name = ? AND post_label = ? AND country_code = ? AND status = 'prayed'
+                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, query_post_label_value_for_db, item_country_code_from_form))
 
-            if mem_person_name == person_name and mem_item_post_label_standardized == post_label_key_search:
-                item_to_put_back_from_memory = item_in_memory.copy()
-                item_index_to_remove_from_memory = i
-                logging.debug(f"[/put_back] Found item to remove at index {i}.") # Changed from INFO to DEBUG
-                break
-            # Add an else to log if no match for this iteration, for verbosity during debugging
-            # else:
-            #    logging.debug(f"[/put_back] No match for item #{i}. Name Match: {mem_person_name == person_name}, PostLabel Match: {mem_item_post_label_standardized == post_label_key_search}")
+            if cursor.rowcount > 0:
+                db_conn.commit()
+                logging.info(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} status updated to 'queued' in prayer_candidates.")
+                updated_in_db = True
+            else:
+                db_conn.rollback() # Rollback if no rows affected, or simply don't commit.
+                logging.warning(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} not found with status 'prayed' in prayer_candidates, or already 'queued', or post_label mismatch. No DB update made.")
+        except sqlite3.Error as e:
+            logging.error(f"SQLite error in /put_back_in_queue when updating prayer_candidates for {person_name}: {e}")
+            if db_conn: db_conn.rollback()
+        finally:
+            if db_conn: db_conn.close()
 
-        db_conn = None # Rename to avoid conflict with outer 'conn' if it were used differently
-        if item_to_put_back_from_memory: # This is the item matched from in-memory prayed_for_data
-            logging.info(f"Preparing to put back item: {person_name} (PostLabel: {post_label_key_search}) for country {item_country_code_from_form}.")
+        if updated_in_db:
+            # Reload this country's prayed data from DB to update in-memory list
+            reload_single_country_prayed_data_from_db(item_country_code_from_form)
+            logging.info(f"In-memory prayed_for_data for {item_country_code_from_form} reloaded after putting item back to queue.")
 
-            db_conn = None
-            updated_in_db = False
-            try:
-                db_conn = sqlite3.connect(DATABASE_URL)
-                cursor = db_conn.cursor()
-
-                # Update status in prayer_candidates table
-                new_status_timestamp = datetime.now()
-                # Determine how to match post_label in the database (NULL vs empty string)
-                # The unique index uses (person_name, post_label, country_code).
-                # post_label_key_search holds "" for None/empty, which should match NULL if that's how it was stored during migration/initial add.
-                # However, direct comparison `post_label = ?` with `""` will not match `NULL`.
-
-                if post_label_key_search == "":
-                    cursor.execute("""
-                        UPDATE prayer_candidates
-                        SET status = 'queued', status_timestamp = ?
-                        WHERE person_name = ? AND post_label IS NULL AND country_code = ? AND status = 'prayed'
-                    """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, item_country_code_from_form))
-                else:
-                    cursor.execute("""
-                        UPDATE prayer_candidates
-                        SET status = 'queued', status_timestamp = ?
-                        WHERE person_name = ? AND post_label = ? AND country_code = ? AND status = 'prayed'
-                    """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, post_label_key_search, item_country_code_from_form))
-
-                if cursor.rowcount > 0:
-                    db_conn.commit()
-                    logging.info(f"Item {person_name} (Post: {post_label_key_search}) for {item_country_code_from_form} status updated to 'queued' in prayer_candidates.")
-                    updated_in_db = True
-                else:
-                    db_conn.rollback()
-                    logging.warning(f"Item {person_name} (Post: {post_label_key_search}) for {item_country_code_from_form} not found with status 'prayed' in prayer_candidates, or already 'queued'. No DB update made.")
-
-            except sqlite3.Error as e:
-                logging.error(f"SQLite error in /put_back_in_queue when updating prayer_candidates for {person_name}: {e}")
-                if db_conn: db_conn.rollback()
-            finally:
-                if db_conn: db_conn.close()
-
-            if updated_in_db:
-                # Remove from in-memory prayed_for_data (this list should only contain 'prayed' items)
-                if item_index_to_remove_from_memory != -1 and item_country_code_from_form in prayed_for_data:
-                    prayed_for_data[item_country_code_from_form].pop(item_index_to_remove_from_memory)
-                    logging.debug(f"Removed item from in-memory prayed_for_data: {person_name} for {item_country_code_from_form}.")
-                    logging.debug(f"New length of prayed_for_data['{item_country_code_from_form}']: {len(prayed_for_data[item_country_code_from_form])}.")
-                else:
-                    logging.warning(f"Could not remove {person_name} from in-memory prayed_for_data: index {item_index_to_remove_from_memory} or country {item_country_code_from_form} invalid.")
-
-                # It might be simpler to just reload this country's prayed data
-                # reload_single_country_prayed_data_from_db is now updated.
-                reload_single_country_prayed_data_from_db(item_country_code_from_form)
-
-                # Map plotting
-                hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
+            # Map plotting
+            hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
                 post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code_from_form)
-                current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db() # Fetch updated queue
+                current_sqlite_queue_for_map_put_back = get_current_queue_items_from_db()
 
                 if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
                     plot_hex_map_with_hearts(
                         hex_map_gdf,
                         post_label_df,
-                        prayed_for_data[item_country_code_from_form], # This will now use the reloaded data
+                        prayed_for_data[item_country_code_from_form],
                         current_sqlite_queue_for_map_put_back,
                         item_country_code_from_form
                     )
-            # The orphaned except/finally blocks that were here have been removed.
-            # The primary try...except...finally for database operations within the
-            # `if updated_in_db:` block (or the outer `if item_to_put_back_from_memory:`)
-            # correctly handles SQLite errors for the main transaction.
-        else:
-            logging.warning(f"Could not find item for {person_name} (Post: {post_label_key_search}) in memory for {item_country_code_from_form} to put back in /put_back.")
+        # else: (if not updated_in_db)
+            # No need to update memory or plot map if DB wasn't changed.
+            # The warning log about no DB update made is sufficient.
 
-    # Redirect logic (unchanged but now at the end of all operations)
+        # Redirect logic (should be outside the 'if updated_in_db' unless redirect depends on success)
+        # Assuming redirect_target_country_code is defined earlier based on item_country_code_from_form
     if redirect_target_country_code and redirect_target_country_code in COUNTRIES_CONFIG:
         return redirect(url_for('prayed_list', country_code=redirect_target_country_code))
     else:

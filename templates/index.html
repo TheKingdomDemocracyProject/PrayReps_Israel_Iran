@@ -88,26 +88,20 @@
                                     })
                                     .then(map_gen_response => {
                                         console.log(map_gen_response.status || 'Map generation triggered.');
-                                        reloadHexMap();
-                                        currently_displayed_map_country_code = new_person_country_code;
+                                        currently_displayed_map_country_code = new_person_country_code; // Update current map country
+                                        reloadHexMap(); // Reload the map image since the country changed
                                     })
                                     .catch(error => {
                                         console.error('Error updating map for new country:', error);
                                     });
-                            } else {
-                                // Country is the same, or no new person, but still reload map if queue changed.
-                                // This ensures highlight updates if top person of same country changes.
-                                reloadHexMap();
                             }
+                            // NO reloadHexMap() here anymore if country is the same during polling
                             document.getElementById('next-button').style.display = 'block';
                         } else {
                             document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
                             document.getElementById('next-button').style.display = 'none';
-                            // Optional: if queue is empty, maybe revert to a default map or clear it?
-                            // For now, it keeps showing the last map.
-                            reloadHexMap(); // Reload to ensure map is up-to-date (e.g. no highlight if queue empty)
+                            // NO reloadHexMap() here anymore if queue is empty during polling
                         }
-                        // reloadHexMap(); // This was the original position, moved up for clarity
                     } else {
                         console.error('Unexpected data format:', data);
                     }
@@ -132,12 +126,13 @@
 
         function nextConstituency() {
             fetch('/process_item', { method: 'POST' })
-                .then(() => {
-                    processedCount++; // Increment local count of processed items
-                    // The 'remaining' is now globally calculated in app.py and passed to the template.
-                    // We should fetch the updated global remaining count, or update it based on current item processing.
-                    // For simplicity, let's decrement the total displayed remaining count.
-                    // A more robust solution would be to get the new 'remaining' from the server.
+                .then(response => { // Added response parameter to check if needed, though original didn't use it
+                    if (!response.ok) { // Basic error check for the POST itself
+                        console.error('Process item request failed:', response.statusText);
+                        // Optionally update UI to indicate failure or retry
+                        return; // Stop further processing in this chain
+                    }
+                    processedCount++;
                     const remainingElement = document.getElementById('remaining');
                     let currentRemaining = parseInt(remainingElement.innerText);
                     if (!isNaN(currentRemaining)) {
@@ -155,16 +150,17 @@
                             } else {
                                 console.log('Unexpected data format from queue/json after process_item:', data);
                             }
-                            updateQueueInfo(); // Call updateQueueInfo after logging
+                            updateQueueInfo(); // Call updateQueueInfo to refresh UI text and potentially country map
+                            reloadHexMap();   // Explicitly reload map image as /process_item updated it
                         })
                         .catch(error => {
                             console.error('Error fetching queue/json after processing item:', error);
                             updateQueueInfo(); // Still call updateQueueInfo to refresh UI
+                            reloadHexMap();   // Still reload map as /process_item likely succeeded
                         });
                 })
                 .catch(error => {
                     console.error('Error processing item:', error);
-                    // Potentially call updateQueueInfo() here as well if the UI needs to be refreshed even on error
                 });
         }
 
