@@ -474,12 +474,25 @@ def process_deputies(csv_data, country_code):
 # Function to periodically update the queue
 def update_queue():
     with app.app_context():
-        logging.info("Update_queue thread started. Will check if initial seeding is needed.")
+        logging.info("Update_queue function execution started.") # Changed log message slightly for clarity
         conn = None
         try:
-            logging.info("[update_queue] Thread started and attempting to connect to DB.")
+            logging.info("[update_queue] Attempting to connect to DB.") # Kept original log
             conn = sqlite3.connect(DATABASE_URL)
             cursor = conn.cursor()
+
+            # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
+            logging.info("[update_queue] Deleting existing 'queued' items from prayer_candidates table before repopulation.")
+            cursor.execute("DELETE FROM prayer_candidates WHERE status = 'queued'")
+            # conn.commit() # Commit this delete immediately
+            # logging.info(f"[update_queue] Deleted {cursor.rowcount} existing 'queued' items.")
+            # Decided to commit at the end of all operations or if items_added_to_db_this_cycle > 0.
+            # If the function errors out before insertions, this delete might be rolled back if not committed here.
+            # For safety and clarity of this step, let's commit the delete separately.
+            conn.commit()
+            logging.info(f"[update_queue] Committed deletion of existing 'queued' items. Rows affected: {cursor.rowcount}")
+
+
             # Check if prayer_candidates has any entries at all.
             # If it does, assume seeding/migration has occurred.
             # cursor.execute("SELECT COUNT(id) FROM prayer_candidates")

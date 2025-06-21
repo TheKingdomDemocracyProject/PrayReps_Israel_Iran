@@ -82,11 +82,10 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
             plt.close(fig) # Ensure figure is closed
         return
 
-    # Define output_filename and output_path here if not defined before the check
+    # Define output_filename and output_path earlier
     output_filename = "hex_map.png"
     output_path = os.path.join(APP_ROOT, 'static', output_filename)
-    # ... rest of the function starting with logging about file existence ...
-    # Log file details BEFORE saving
+
     if os.path.exists(output_path):
         try:
             mod_time = os.path.getmtime(output_path)
@@ -96,235 +95,194 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
     else:
         logging.debug(f"File {output_path} does not exist yet.")
 
-    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-
-    fig_bg_color = 'white' # Default figure background
-    hex_plot_color = 'white' # Default hex fill color
-    fig.patch.set_facecolor(fig_bg_color) # Set figure background
-    ax.set_facecolor(fig_bg_color) # Also set axes background for good measure
-    hex_map_gdf.plot(ax=ax, color=hex_plot_color, edgecolor='lightgrey')
-    ax.set_axis_off()
-
-    bounds = hex_map_gdf.geometry.total_bounds
-    ax.set_xlim(bounds[0], bounds[2])
-    ax.set_ylim(bounds[1], bounds[3])
-    ax.set_aspect('equal')
-
-    logging.info(f"Plotting map for country: {country_code}. Prayed items: {len(prayed_for_items_list)}, Queue items: {len(queue_items_list)}")
-
-    if country_code in ['israel', 'iran']:
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present from previous logging additions)
-        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Using Random Allocation Strategy.") # Retained if still relevant
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-        # Random Allocation Strategy
+    # Check for 'id' column if country is Israel or Iran (already implemented from previous step)
+    # This check needs to happen before the main try block if it's going to save a base map and return.
+    if country_code in ['israel', 'iran'] and (hex_map_gdf is None or 'id' not in hex_map_gdf.columns):
+        # Note: The hex_map_gdf None check is already at the very top.
+        # This specific check is if GDF exists BUT 'id' column is missing for these countries.
         if 'id' not in hex_map_gdf.columns:
-            logging.error(f"'id' column missing in hex_map_gdf for {country_code}. Cannot apply random allocation strategy (hearts/highlights). Map will be blank.")
-            # Plot the base map without hearts/highlights
-            # fig, ax = plt.subplots(1, 1, figsize=(10, 10)) # Already have fig, ax
-            fig.patch.set_facecolor('white')
-            ax.set_facecolor('white')
-            hex_map_gdf.plot(ax=ax, color='white', edgecolor='lightgrey')
-            ax.set_axis_off()
-            bounds = hex_map_gdf.geometry.total_bounds
-            ax.set_xlim(bounds[0], bounds[2])
-            ax.set_ylim(bounds[1], bounds[3])
-            ax.set_aspect('equal')
+            logging.error(f"'id' column missing in hex_map_gdf for {country_code}. Cannot apply random allocation. Saving base map.")
+            fig_base = None
             try:
+                fig_base, ax_base = plt.subplots(1, 1, figsize=(10, 10))
+                fig_base.patch.set_facecolor('white')
+                ax_base.set_facecolor('white')
+                hex_map_gdf.plot(ax=ax_base, color='white', edgecolor='lightgrey')
+                ax_base.set_axis_off()
+                bounds_base = hex_map_gdf.geometry.total_bounds
+                ax_base.set_xlim(bounds_base[0], bounds_base[2])
+                ax_base.set_ylim(bounds_base[1], bounds_base[3])
+                ax_base.set_aspect('equal')
                 plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
-                logging.info(f"Saved map for {country_code} without hearts/highlights due to missing 'id' column.")
+                logging.info(f"Saved base map for {country_code} without hearts/highlights due to missing 'id' column.")
             except Exception as e_save_no_id:
-                logging.error(f"Failed to save map for {country_code} (no 'id' column): {e_save_no_id}")
+                logging.error(f"Failed to save base map for {country_code} (no 'id' column): {e_save_no_id}")
             finally:
-                plt.close(fig) # Ensure figure is closed
-            return # Exit plotting for this country
+                if fig_base is not None:
+                    plt.close(fig_base)
+            return
 
-        num_hearts = len(prayed_for_items_list)
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
-        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts to be plotted: {num_hearts}")
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-        all_hex_ids = list(hex_map_gdf['id'].unique())
+    fig = None # Initialize fig for the main plotting block
+    try:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        fig_bg_color = 'white'
+        hex_plot_color = 'white'
+        fig.patch.set_facecolor(fig_bg_color)
+        ax.set_facecolor(fig_bg_color)
+        hex_map_gdf.plot(ax=ax, color=hex_plot_color, edgecolor='lightgrey')
+        ax.set_axis_off()
+        bounds = hex_map_gdf.geometry.total_bounds
+        ax.set_xlim(bounds[0], bounds[2])
+        ax.set_ylim(bounds[1], bounds[3])
+        ax.set_aspect('equal')
 
-        if not all_hex_ids:
-            logging.warning(f"No hex IDs found in map data for {country_code}. Cannot place hearts.")
-            # Still save the empty map
-        else:
-            sorted_hex_ids = sorted(all_hex_ids)
-            hex_ids_to_color = sorted_hex_ids[:num_hearts]
-            # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
-            # logging.info(f"[plot_hex_map_with_hearts - {country_code}] hex_ids_to_color (first 5 if many): {hex_ids_to_color[:5]}")
-            # if len(hex_ids_to_color) > 5:
-            #    logging.info(f"[plot_hex_map_with_hearts - {country_code}] ... and {len(hex_ids_to_color) - 5} more hex_ids_to_color.")
-            # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-            logging.debug(f"IR/ISR: Plotting {num_hearts} hearts on hex_ids: {hex_ids_to_color[:5]}...") # Log first 5
-            for hex_id_to_color in hex_ids_to_color:
-                location_geom = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_color]
-                if not location_geom.empty:
-                    centroid = location_geom.geometry.centroid.iloc[0]
-                    heart_img = load_random_heart_image()
-                    if heart_img: # Check if heart_img is not None
-                        imagebox = OffsetImage(heart_img, zoom=0.6)
-                        ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
-                        ax.add_artist(ab)
-                    else:
-                        logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
-                else:
-                    logging.warning(f"Geometry not found for hex ID {hex_id_to_color} in {country_code}.")
-        # Queue highlighting is not implemented for this strategy as per requirements. (This comment refers to the old specific strategy, random has its own below)
+        logging.info(f"Plotting map for country: {country_code}. Prayed items: {len(prayed_for_items_list)}, Queue items: {len(queue_items_list)}")
 
-    else:
-        # Specific Mapping Strategy (for other potential countries)
-        if post_label_mapping_df is None or post_label_mapping_df.empty:
-            logging.error(f"Post label mapping is missing or empty for {country_code}. Cannot map items to hexes.")
-            # Continue to save the map without hearts/highlights if this data is crucial
-        elif not all(col in post_label_mapping_df.columns for col in ['post_label', 'name']):
-            logging.error(f"Required columns ('post_label', 'name') not in post_label_mapping_df for {country_code}.")
-        else:
-            prayed_locations_labels = [item.get('post_label', "") for item in prayed_for_items_list]
-            for location_label in prayed_locations_labels:
-                location_code_series = post_label_mapping_df.loc[post_label_mapping_df['post_label'] == location_label, 'name']
-                if not location_code_series.empty:
-                    location_code = location_code_series.iloc[0]
-                    if 'name' not in hex_map_gdf.columns:
-                        logging.error(f"'name' column missing in hex_map_gdf for {country_code}. Cannot map by name.")
-                        continue # or break, depending on desired behavior
-                    location_geom = hex_map_gdf[hex_map_gdf['name'] == location_code]
+        # Heart placement and queue highlighting logic (existing code)
+        if country_code in ['israel', 'iran']:
+            # Random Allocation Strategy
+            # 'id' column existence is already checked and handled for these countries before this try block.
+            num_hearts = len(prayed_for_items_list)
+            all_hex_ids = list(hex_map_gdf['id'].unique())
+            if not all_hex_ids:
+                logging.warning(f"No hex IDs found in map data for {country_code}. Cannot place hearts.")
+            else:
+                sorted_hex_ids = sorted(all_hex_ids)
+                hex_ids_to_color = sorted_hex_ids[:num_hearts]
+                logging.debug(f"IR/ISR: Plotting {num_hearts} hearts on hex_ids: {hex_ids_to_color[:5]}...")
+                for hex_id_to_color in hex_ids_to_color:
+                    location_geom = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_color]
                     if not location_geom.empty:
                         centroid = location_geom.geometry.centroid.iloc[0]
                         heart_img = load_random_heart_image()
-                        if heart_img: # Check if heart_img is not None
+                        if heart_img:
                             imagebox = OffsetImage(heart_img, zoom=0.6)
                             ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
                             ax.add_artist(ab)
                         else:
                             logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
                     else:
-                        logging.debug(f"No geometry found for location code {location_code} (from label {location_label}) in {country_code}.")
-                else:
-                    logging.debug(f"No mapping found for post_label {location_label} in {country_code}.")
-
-            # Queue Highlighting for Specific Strategy
-            if queue_items_list and post_label_mapping_df is not None and not post_label_mapping_df.empty:
-                # Filter queue for items belonging to the current country_code
-                country_specific_queue = [item for item in queue_items_list if item.get('country_code') == country_code]
-                if country_specific_queue:
-                    top_queue_item = country_specific_queue[0] # Highlight top item for this country
-                    top_queue_post_label = top_queue_item.get('post_label', "")
-                    location_code_series_q = post_label_mapping_df.loc[post_label_mapping_df['post_label'] == top_queue_post_label, 'name']
-                    if not location_code_series_q.empty:
-                        location_code_q = location_code_series_q.iloc[0]
-                        if 'name' in hex_map_gdf.columns:
-                            location_geom_q = hex_map_gdf[hex_map_gdf['name'] == location_code_q]
-                            if not location_geom_q.empty:
-                                # Using .iloc[0].exterior.coords might be problematic if geometry is MultiPolygon.
-                                # A safer way is to directly use the geometry object if it's simple.
-                                geom_to_highlight = location_geom_q.geometry.iloc[0]
-                                if geom_to_highlight.geom_type == 'Polygon':
-                                    hex_patch = Polygon(geom_to_highlight.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.5, linewidth=2)
-                                    ax.add_patch(hex_patch)
-                                elif geom_to_highlight.geom_type == 'MultiPolygon':
-                                     for poly in geom_to_highlight.geoms: # iterate over polygons in MultiPolygon
-                                        hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.5, linewidth=2)
-                                        ax.add_patch(hex_patch)
-                                else:
-                                    logging.warning(f"Geometry type {geom_to_highlight.geom_type} not directly supported for highlighting for {location_code_q} in {country_code}.")
-                            else:
-                                logging.debug(f"No geometry for queue highlight for {location_code_q} (from label {top_queue_post_label}) in {country_code}.")
-                        else:
-                             logging.error(f"'name' column missing in hex_map_gdf for {country_code}, cannot highlight queue item by name.")
-                    else:
-                        logging.debug(f"No mapping for queue highlight for post_label {top_queue_post_label} in {country_code}.")
-                else:
-                    logging.debug(f"Queue for country {country_code} is empty or items are not for this country. No highlight.")
-            elif not queue_items_list:
-                logging.debug(f"Global queue is empty. No highlight for country {country_code}.")
-
-    # Conditional Highlighting for Top Queue Item
-    if queue_items_list: # Check if queue is not empty
-        top_queue_item = queue_items_list[0]
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
-        # if country_code in ['israel', 'iran']:
-        #    if top_queue_item.get('country_code') == country_code:
-        #        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item ({top_queue_item.get('person_name')}) matches current country. Attempting highlighting.")
-        #    else:
-        #        logging.info(f"[plot_hex_map_with_hearts - {country_code}] Top queue item country ({top_queue_item.get('country_code')}) does not match current country. No highlight.")
-        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-        if top_queue_item.get('country_code') == country_code: # Only highlight if top item matches current map's country
-            logging.info(f"Attempting to highlight top queue item for {country_code}: {top_queue_item.get('person_name')}")
-            if country_code in ['israel', 'iran']:
-                logging.debug(f"IR/ISR: Attempting to highlight queue item for {country_code}")
-                # Random Allocation: Highlight the 'next' hex
-                if hex_map_gdf is not None and not hex_map_gdf.empty and 'id' in hex_map_gdf.columns:
-                    num_hearts_already_plotted = len(prayed_for_items_list)
-                    all_hex_ids = list(hex_map_gdf['id'].unique())
-                    sorted_hex_ids = sorted(all_hex_ids)
-
-                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
-                    # logging.info(f"[plot_hex_map_with_hearts - {country_code}] num_hearts_already_plotted for highlight check: {num_hearts_already_plotted}")
-                    # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Total hexes available for highlight check: {len(sorted_hex_ids)}")
-                    # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-
-                    if num_hearts_already_plotted < len(sorted_hex_ids):
-                        hex_id_to_highlight = sorted_hex_ids[num_hearts_already_plotted]
-                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN START ==== (already present)
-                        # logging.info(f"[plot_hex_map_with_hearts - {country_code}] Attempting to highlight hex_id: {hex_id_to_highlight}")
-                        # ==== DETAILED LOGGING FOR ISRAEL/IRAN END ====
-                        location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
-                        if not location_geom_q.empty:
-                            geom = location_geom_q.geometry.iloc[0]
-                            if geom.geom_type == 'Polygon':
-                                hex_patch = Polygon(geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
-                                ax.add_patch(hex_patch)
-                                logging.info(f"Highlighted next hex {hex_id_to_highlight} for {country_code} (random strategy).")
-                            elif geom.geom_type == 'MultiPolygon':
-                                for poly in list(geom.geoms):
-                                    hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
-                                    ax.add_patch(hex_patch)
-                                logging.info(f"Highlighted next (multi)hex {hex_id_to_highlight} for {country_code} (random strategy).")
-                        else:
-                            logging.warning(f"Could not find geometry for next hex ID {hex_id_to_highlight} in {country_code}.")
-                    else:
-                        logging.info(f"All hexes already prayed for in {country_code}, nothing to highlight for queue (random strategy).")
-                else:
-                    logging.warning(f"Hex map data missing or 'id' column absent for random queue highlighting in {country_code}.")
+                        logging.warning(f"Geometry not found for hex ID {hex_id_to_color} in {country_code}.")
+        else:
+            # Specific Mapping Strategy
+            if post_label_mapping_df is None or post_label_mapping_df.empty:
+                logging.error(f"Post label mapping is missing or empty for {country_code}. Cannot map items to hexes.")
+            elif not all(col in post_label_mapping_df.columns for col in ['post_label', 'name']):
+                logging.error(f"Required columns ('post_label', 'name') not in post_label_mapping_df for {country_code}.")
             else:
-                # Specific Mapping Strategy (for other countries)
-                if post_label_mapping_df is not None and not post_label_mapping_df.empty and \
-                   'post_label' in post_label_mapping_df.columns and 'name' in post_label_mapping_df.columns and \
-                   hex_map_gdf is not None and not hex_map_gdf.empty and 'name' in hex_map_gdf.columns:
+                prayed_locations_labels = [item.get('post_label', "") for item in prayed_for_items_list]
+                for location_label in prayed_locations_labels:
+                    location_code_series = post_label_mapping_df.loc[post_label_mapping_df['post_label'] == location_label, 'name']
+                    if not location_code_series.empty:
+                        location_code = location_code_series.iloc[0]
+                        if 'name' not in hex_map_gdf.columns:
+                            logging.error(f"'name' column missing in hex_map_gdf for {country_code}. Cannot map by name.")
+                            continue
+                        location_geom = hex_map_gdf[hex_map_gdf['name'] == location_code]
+                        if not location_geom.empty:
+                            centroid = location_geom.geometry.centroid.iloc[0]
+                            heart_img = load_random_heart_image()
+                            if heart_img:
+                                imagebox = OffsetImage(heart_img, zoom=0.6)
+                                ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
+                                ax.add_artist(ab)
+                            else:
+                                logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
+                        else:
+                            logging.debug(f"No geometry found for location code {location_code} (from label {location_label}) in {country_code}.")
+                    else:
+                        logging.debug(f"No mapping found for post_label {location_label} in {country_code}.")
 
-                    top_queue_post_label = top_queue_item.get('post_label', "")
-                    if top_queue_post_label: # Ensure there is a post_label to look up
-                        location_code_series_q = post_label_mapping_df.loc[post_label_mapping_df['post_label'] == top_queue_post_label, 'name']
-                        if not location_code_series_q.empty:
-                            location_code_q = location_code_series_q.iloc[0]
-                            location_geom_q = hex_map_gdf[hex_map_gdf['name'] == location_code_q]
+        # Conditional Highlighting for Top Queue Item (common logic, adapted)
+        if queue_items_list:
+            top_queue_item = queue_items_list[0]
+            if top_queue_item.get('country_code') == country_code:
+                logging.info(f"Attempting to highlight top queue item for {country_code}: {top_queue_item.get('person_name')}")
+                if country_code in ['israel', 'iran']:
+                    # Random Allocation Highlighting
+                    if 'id' in hex_map_gdf.columns: # Should be true due to earlier check
+                        num_hearts_already_plotted = len(prayed_for_items_list)
+                        all_hex_ids = list(hex_map_gdf['id'].unique())
+                        sorted_hex_ids = sorted(all_hex_ids)
+                        if num_hearts_already_plotted < len(sorted_hex_ids):
+                            hex_id_to_highlight = sorted_hex_ids[num_hearts_already_plotted]
+                            location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
                             if not location_geom_q.empty:
                                 geom = location_geom_q.geometry.iloc[0]
                                 if geom.geom_type == 'Polygon':
                                     hex_patch = Polygon(geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                     ax.add_patch(hex_patch)
-                                    logging.info(f"Highlighted hex for {top_queue_post_label} in {country_code} (specific strategy).")
+                                    logging.info(f"Highlighted next hex {hex_id_to_highlight} for {country_code} (random strategy).")
                                 elif geom.geom_type == 'MultiPolygon':
-                                    for poly in list(geom.geoms):
+                                    for poly in list(geom.geoms): # Ensure iteration over actual polygons
                                         hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                         ax.add_patch(hex_patch)
-                                    logging.info(f"Highlighted (multi)hex for {top_queue_post_label} in {country_code} (specific strategy).")
+                                    logging.info(f"Highlighted next (multi)hex {hex_id_to_highlight} for {country_code} (random strategy).")
                             else:
-                                logging.warning(f"No geometry for location code {location_code_q} in {country_code} for specific queue highlighting.")
+                                logging.warning(f"Could not find geometry for next hex ID {hex_id_to_highlight} in {country_code}.")
                         else:
-                            logging.warning(f"No mapping found for post_label {top_queue_post_label} in {country_code} for specific queue highlighting.")
-                    else:
-                        logging.info(f"Top queue item for {country_code} has no post_label for specific highlighting.")
+                            logging.info(f"All hexes already prayed for in {country_code}, nothing to highlight for queue (random strategy).")
                 else:
-                    logging.warning(f"Data missing for specific queue highlighting in {country_code} (map data or mapping df issues).")
+                    # Specific Mapping Highlighting
+                    if post_label_mapping_df is not None and not post_label_mapping_df.empty and \
+                       all(col in post_label_mapping_df.columns for col in ['post_label', 'name']) and \
+                       'name' in hex_map_gdf.columns:
+                        top_queue_post_label = top_queue_item.get('post_label', "")
+                        if top_queue_post_label:
+                            location_code_series_q = post_label_mapping_df.loc[post_label_mapping_df['post_label'] == top_queue_post_label, 'name']
+                            if not location_code_series_q.empty:
+                                location_code_q = location_code_series_q.iloc[0]
+                                location_geom_q = hex_map_gdf[hex_map_gdf['name'] == location_code_q]
+                                if not location_geom_q.empty:
+                                    geom = location_geom_q.geometry.iloc[0]
+                                    if geom.geom_type == 'Polygon':
+                                        hex_patch = Polygon(geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
+                                        ax.add_patch(hex_patch)
+                                        logging.info(f"Highlighted hex for {top_queue_post_label} in {country_code} (specific strategy).")
+                                    elif geom.geom_type == 'MultiPolygon':
+                                        for poly in list(geom.geoms): # Ensure iteration
+                                            hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
+                                            ax.add_patch(hex_patch)
+                                        logging.info(f"Highlighted (multi)hex for {top_queue_post_label} in {country_code} (specific strategy).")
+                                else:
+                                    logging.warning(f"No geometry for location code {location_code_q} in {country_code} for specific queue highlighting.")
+                            else:
+                                logging.warning(f"No mapping found for post_label {top_queue_post_label} in {country_code} for specific queue highlighting.")
+                        else:
+                             logging.info(f"Top queue item for {country_code} has no post_label for specific highlighting.")
+                    else:
+                        logging.warning(f"Data missing for specific queue highlighting in {country_code} (map data or mapping df issues).")
+            else:
+                logging.debug(f"Top queue item country '{top_queue_item.get('country_code')}' does not match current map country '{country_code}'. No highlight.")
         else:
-            logging.debug(f"Top queue item country '{top_queue_item.get('country_code')}' does not match current map country '{country_code}'. No highlight.")
-    else:
-        logging.debug("Global queue is empty. Nothing to highlight.")
+            logging.debug("Global queue is empty. Nothing to highlight.")
 
-    plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
-    plt.close(fig)
-    logging.info(f"Successfully saved map to {output_path}")
+        plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100)
+        logging.info(f"Successfully saved map to {output_path}")
+
+    except Exception as e_plot:
+        logging.error(f"An unexpected error occurred during map plotting for {country_code}: {e_plot}", exc_info=True)
+        if fig is not None: # If main fig exists, try to close it
+            plt.close(fig)
+            fig = None # Reset fig
+
+        fig_err = None # Initialize fig_err
+        try:
+            fig_err, ax_err = plt.subplots(1, 1, figsize=(10, 10))
+            ax_err.text(0.5, 0.5, f"Error generating map\nfor {country_code}.\nPlease check logs.", ha='center', va='center', fontsize=20, color='red')
+            ax_err.set_axis_off()
+            plt.savefig(output_path, bbox_inches='tight', pad_inches=0.5, dpi=100) # Save to the same output_path
+            logging.info(f"Saved error placeholder map for {country_code} due to plotting exception.")
+        except Exception as e_save_generic_error:
+            logging.error(f"Failed to save generic error placeholder map for {country_code}: {e_save_generic_error}")
+        finally:
+            if fig_err is not None:
+                plt.close(fig_err)
+    finally:
+        if fig is not None: # If main fig was successfully created and not closed by an error path
+            plt.close(fig)
+
+
     # Log file details AFTER saving
     if os.path.exists(output_path):
         try:
