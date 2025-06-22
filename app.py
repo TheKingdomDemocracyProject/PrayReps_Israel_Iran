@@ -149,12 +149,14 @@ def init_sqlite_db():
                 thumbnail TEXT,
                 status TEXT NOT NULL,
                 status_timestamp TIMESTAMP NOT NULL,
-                initial_add_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                initial_add_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                hex_id TEXT
             )
         ''')
-        logging.info("Ensured prayer_candidates table exists.")
+        logging.info("Ensured prayer_candidates table exists with hex_id column.")
 
         # Create unique index for prayer_candidates
+        # No change to unique index, hex_id is not part of uniqueness constraint
         cursor.execute('''
             CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_unique
             ON prayer_candidates (person_name, post_label, country_code);
@@ -207,8 +209,8 @@ def migrate_to_single_table_schema():
                 try:
                     cursor.execute('''
                         INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp)
-                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp, hex_id)
+                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, NULL)
                     ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['added_timestamp'], item['added_timestamp']))
                     if cursor.rowcount > 0:
                         migrated_from_queue += 1
@@ -225,8 +227,8 @@ def migrate_to_single_table_schema():
                 try:
                     cursor.execute('''
                         INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp)
-                        VALUES (?, ?, ?, ?, ?, 'prayed', ?, ?)
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp, hex_id)
+                        VALUES (?, ?, ?, ?, ?, 'prayed', ?, ?, NULL)
                     ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['prayed_timestamp'], item['prayed_timestamp']))
                     if cursor.rowcount > 0:
                         migrated_from_prayed += 1
@@ -416,7 +418,7 @@ def get_current_queue_items_from_db():
         cursor = conn.cursor()
         # Select from prayer_candidates with status 'queued'
         cursor.execute("""
-            SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp
+            SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp, hex_id
             FROM prayer_candidates
             WHERE status = 'queued'
             ORDER BY RANDOM()
@@ -590,26 +592,67 @@ def update_queue():
 
             items_added_to_db_this_cycle = 0
             # Connection is already established and cursor is available
+
+            # Prepare available hex IDs for random allocation countries
+            available_hex_ids_by_country = {}
+            random_allocation_countries = ['israel', 'iran'] # Define these, or get from config if more dynamic
+
+            for country_code_hex_prep in random_allocation_countries:
+                if country_code_hex_prep not in COUNTRIES_CONFIG:
+                    continue # Skip if country not configured
+
+                hex_map_gdf_prep = HEX_MAP_DATA_STORE.get(country_code_hex_prep)
+                if hex_map_gdf_prep is not None and not hex_map_gdf_prep.empty and 'id' in hex_map_gdf_prep.columns:
+                    all_map_hex_ids = set(hex_map_gdf_prep['id'].unique())
+
+                    # Fetch used hex_ids from DB for this country
+                    cursor.execute("""
+                        SELECT hex_id FROM prayer_candidates
+                        WHERE country_code = ? AND hex_id IS NOT NULL AND (status = 'prayed' OR status = 'queued')
+                    """, (country_code_hex_prep,))
+                    used_hex_ids_rows = cursor.fetchall()
+                    used_hex_ids = {row['hex_id'] for row in used_hex_ids_rows}
+
+                    current_available_hex_ids = list(all_map_hex_ids - used_hex_ids)
+                    random.shuffle(current_available_hex_ids) # Shuffle for random assignment
+                    available_hex_ids_by_country[country_code_hex_prep] = current_available_hex_ids
+                    logging.info(f"[update_queue] For {country_code_hex_prep}: {len(all_map_hex_ids)} total map hexes, {len(used_hex_ids)} used, {len(current_available_hex_ids)} available for assignment.")
+                else:
+                    logging.warning(f"[update_queue] Hex map data or 'id' column not available for {country_code_hex_prep}. Cannot prepare available hex IDs.")
+                    available_hex_ids_by_country[country_code_hex_prep] = []
+
+            # Assign hex_id to items before adding to DB
+            for item_to_process_for_hex in all_potential_candidates:
+                item_country_code = item_to_process_for_hex['country_code']
+                item_to_process_for_hex['hex_id'] = None # Default to None
+
+                if item_country_code in random_allocation_countries:
+                    if available_hex_ids_by_country.get(item_country_code): # Check if list exists and is not empty
+                        assigned_hex_id = available_hex_ids_by_country[item_country_code].pop()
+                        item_to_process_for_hex['hex_id'] = assigned_hex_id
+                        logging.debug(f"[update_queue] Assigned hex_id {assigned_hex_id} to {item_to_process_for_hex['person_name']} for {item_country_code}")
+                    else:
+                        logging.warning(f"[update_queue] No available hex_ids to assign for {item_to_process_for_hex['person_name']} in {item_country_code}. Map might be full or data missing.")
+
+            # Now, insert items with their assigned hex_ids (or None)
             for item_to_add in all_potential_candidates:
                 person_name = item_to_add['person_name']
-                post_label = item_to_add['post_label'] # Already standardized to "" if None
-                country_code_add = item_to_add['country_code'] # Renamed to avoid conflict
-                party_add = item_to_add['party'] # Renamed
-                thumbnail_add = item_to_add['thumbnail'] # Renamed
+                post_label = item_to_add['post_label']
+                country_code_add = item_to_add['country_code']
+                party_add = item_to_add['party']
+                thumbnail_add = item_to_add['thumbnail']
+                hex_id_to_insert = item_to_add.get('hex_id') # Get the assigned hex_id
 
-                # Insert into prayer_candidates with status 'queued'
-                # initial_add_timestamp will be set by default by DB
-                # status_timestamp should be now as it's being added to queue now
                 current_ts_for_status = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 try:
                     cursor.execute('''
                         INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp)
-                        VALUES (?, ?, ?, ?, ?, 'queued', ?)
-                    ''', (person_name, post_label if post_label else None, country_code_add, party_add, thumbnail_add, current_ts_for_status))
+                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, hex_id)
+                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+                    ''', (person_name, post_label if post_label else None, country_code_add, party_add, thumbnail_add, current_ts_for_status, hex_id_to_insert))
                     if cursor.rowcount > 0:
                         items_added_to_db_this_cycle += 1
-                except sqlite3.Error as e_insert: # Changed variable name
+                except sqlite3.Error as e_insert:
                     logging.error(f"SQLite error during initial seeding into prayer_candidates for {person_name} ({post_label}): {e_insert}")
 
             if items_added_to_db_this_cycle > 0:
@@ -652,18 +695,18 @@ def load_prayed_for_data_from_db():
         cursor = conn.cursor()
         # Select from prayer_candidates with status 'prayed'
         cursor.execute("""
-            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp
+            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id
             FROM prayer_candidates
             WHERE status = 'prayed'
         """)
         rows = cursor.fetchall()
         loaded_count = 0
         for row_data in rows:
-            item = dict(row_data)
+            item = dict(row_data) # This will now include hex_id if it was selected
             # 'timestamp' is already aliased from status_timestamp in the query
             country_code_load = item.get('country_code') # Renamed variable
             if country_code_load in prayed_for_data:
-                prayed_for_data[country_code_load].append(item)
+                prayed_for_data[country_code_load].append(item) # item now contains hex_id
                 loaded_count +=1
             else:
                 logging.warning(f"Found item in prayer_candidates (status='prayed') with unknown country_code: {country_code_load} - Item: {item.get('person_name')}")
@@ -697,7 +740,7 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
 
         # Select from prayer_candidates with status 'prayed' for the specific country
         cursor_reload.execute("""
-            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp
+            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id
             FROM prayer_candidates
             WHERE status = 'prayed' AND country_code = ?
         """, (country_code_to_reload,))
@@ -705,9 +748,9 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
         rows = cursor_reload.fetchall()
         loaded_count = 0
         for row_data in rows:
-            item = dict(row_data)
+            item = dict(row_data) # This will now include hex_id
             # 'timestamp' is already aliased from status_timestamp
-            prayed_for_data[country_code_to_reload].append(item)
+            prayed_for_data[country_code_to_reload].append(item) # item now contains hex_id
             loaded_count += 1
         logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} 'prayed' items for {country_code_to_reload} from prayer_candidates into prayed_for_data.")
 
@@ -878,14 +921,16 @@ def process_item():
         cursor = conn.cursor()
 
         # Fetch the item's details first and ensure it's 'queued'
+        # Ensure hex_id is fetched by using "SELECT *" or explicitly adding it.
+        # "SELECT *" already includes all columns, so hex_id will be fetched.
         cursor.execute("SELECT * FROM prayer_candidates WHERE id = ? AND status = 'queued'", (item_id_to_process,))
         row = cursor.fetchone()
 
         if row:
-            item_to_process = dict(row)
+            item_to_process = dict(row) # This will now include hex_id
             person_name_to_log = item_to_process.get('person_name', 'N/A')
             country_code_item = item_to_process['country_code']
-            logging.info(f"Attempting to process item ID={item_id_to_process} (Name={person_name_to_log}) as requested by frontend.")
+            logging.info(f"Attempting to process item ID={item_id_to_process} (Name={person_name_to_log}, HexID={item_to_process.get('hex_id')}) as requested by frontend.")
 
             new_status_timestamp = datetime.now()
             cursor.execute("""
@@ -896,9 +941,7 @@ def process_item():
 
             if cursor.rowcount > 0:
                 conn.commit()
-                # logging.info(f"Successfully updated item ID={item_id_to_process} to 'prayed'.") # Old log
                 logging.info(f"[process_item] Successfully committed DB update for item ID={item_id_to_process} to 'prayed'.")
-                # Note: In-memory prayed_for_data is NOT directly updated by process_item anymore. Relies on subsequent fresh loads by other routes.
                 item_processed = True
                 processed_item_details = {
                     'person_name': item_to_process['person_name'],
@@ -906,7 +949,8 @@ def process_item():
                     'country_code': country_code_item,
                     'party': item_to_process.get('party'),
                     'thumbnail': item_to_process.get('thumbnail'),
-                    'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                    'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                    'hex_id': item_to_process.get('hex_id') # Add hex_id here
                 }
                 # This block should be removed or commented out:
                 # if country_code_item in prayed_for_data:
@@ -1311,29 +1355,78 @@ def put_back_in_queue():
         updated_in_db = False
         try:
             db_conn = sqlite3.connect(DATABASE_URL)
+            db_conn.row_factory = sqlite3.Row # Important for fetching diagnostic_row details by name
             cursor = db_conn.cursor()
             new_status_timestamp = datetime.now()
 
-            if is_post_label_null_in_db_query:
-                cursor.execute("""
-                    UPDATE prayer_candidates
-                    SET status = 'queued', status_timestamp = ?
-                    WHERE person_name = ? AND post_label IS NULL AND country_code = ? AND status = 'prayed'
-                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, item_country_code_from_form))
-            else:
-                cursor.execute("""
-                    UPDATE prayer_candidates
-                    SET status = 'queued', status_timestamp = ?
-                    WHERE person_name = ? AND post_label = ? AND country_code = ? AND status = 'prayed'
-                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), person_name, query_post_label_value_for_db, item_country_code_from_form))
+            # Fetch the item first to check its current hex_id
+            # The diagnostic_row from earlier can be used if it's confirmed to be the correct item.
+            # For safety, re-fetch or ensure diagnostic_row is exactly the one to update.
+            # Assuming diagnostic_row (fetched above the try-finally) is the target item.
+            # Let's refine this to fetch within the transaction for safety.
 
-            if cursor.rowcount > 0:
-                db_conn.commit()
-                logging.info(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} status updated to 'queued' in prayer_candidates.")
-                updated_in_db = True
+            current_hex_id = None
+            select_sql_for_put_back = "SELECT id, hex_id FROM prayer_candidates WHERE person_name = ? AND country_code = ? AND status = 'prayed'"
+            params_for_put_back = [person_name, item_country_code_from_form]
+            if is_post_label_null_in_db_query:
+                select_sql_for_put_back += " AND post_label IS NULL"
             else:
-                db_conn.rollback() # Rollback if no rows affected, or simply don't commit.
-                logging.warning(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} not found with status 'prayed' in prayer_candidates, or already 'queued', or post_label mismatch. No DB update made.")
+                select_sql_for_put_back += " AND post_label = ?"
+                params_for_put_back.append(query_post_label_value_for_db)
+
+            cursor.execute(select_sql_for_put_back, tuple(params_for_put_back))
+            item_to_update_details = cursor.fetchone()
+
+            if not item_to_update_details:
+                logging.warning(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} not found with status 'prayed' for put_back. No DB update made.")
+                updated_in_db = False
+            else:
+                current_hex_id = item_to_update_details['hex_id']
+                item_db_id = item_to_update_details['id']
+                hex_id_to_set = current_hex_id
+
+                random_allocation_countries = ['israel', 'iran']
+                if item_country_code_from_form in random_allocation_countries and not current_hex_id:
+                    logging.info(f"Item {person_name} in {item_country_code_from_form} has NULL hex_id. Attempting to assign one.")
+                    hex_map_gdf_put_back = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
+                    if hex_map_gdf_put_back is not None and not hex_map_gdf_put_back.empty and 'id' in hex_map_gdf_put_back.columns:
+                        all_map_hex_ids_pb = set(hex_map_gdf_put_back['id'].unique())
+
+                        # Fetch currently used hex_ids (prayed or queued) for this country
+                        cursor.execute("""
+                            SELECT hex_id FROM prayer_candidates
+                            WHERE country_code = ? AND hex_id IS NOT NULL AND id != ?
+                        """, (item_country_code_from_form, item_db_id)) # Exclude current item being processed
+                        used_hex_ids_rows_pb = cursor.fetchall()
+                        used_hex_ids_pb = {row['hex_id'] for row in used_hex_ids_rows_pb}
+
+                        available_hex_ids_pb = list(all_map_hex_ids_pb - used_hex_ids_pb)
+                        if available_hex_ids_pb:
+                            random.shuffle(available_hex_ids_pb)
+                            hex_id_to_set = available_hex_ids_pb.pop()
+                            logging.info(f"Assigned new hex_id {hex_id_to_set} to {person_name} during put_back.")
+                        else:
+                            logging.warning(f"No available hex_ids to assign to {person_name} in {item_country_code_from_form} during put_back.")
+                            # hex_id_to_set remains None if no hex can be assigned
+                    else:
+                        logging.warning(f"Hex map data not available for {item_country_code_from_form} during put_back hex_id assignment.")
+
+                # Now perform the update with potentially new hex_id
+                cursor.execute("""
+                    UPDATE prayer_candidates
+                    SET status = 'queued', status_timestamp = ?, hex_id = ?
+                    WHERE id = ?
+                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), hex_id_to_set, item_db_id))
+
+                if cursor.rowcount > 0:
+                    db_conn.commit()
+                    logging.info(f"Item {person_name} (ID: {item_db_id}, Post: {log_display_post_label}) for {item_country_code_from_form} status updated to 'queued', hex_id set to {hex_id_to_set}.")
+                    updated_in_db = True
+                else:
+                    # This case should ideally not be reached if item_to_update_details was found.
+                    db_conn.rollback()
+                    logging.error(f"Failed to update item {person_name} (ID: {item_db_id}) even after finding it. This should not happen.")
+
         except sqlite3.Error as e:
             logging.error(f"SQLite error in /put_back_in_queue when updating prayer_candidates for {person_name}: {e}")
             if db_conn: db_conn.rollback()

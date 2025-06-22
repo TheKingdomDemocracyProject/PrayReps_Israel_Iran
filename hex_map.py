@@ -138,20 +138,19 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
 
         logging.info(f"Plotting map for country: {country_code}. Prayed items: {len(prayed_for_items_list)}, Queue items: {len(queue_items_list)}")
 
-        # Heart placement and queue highlighting logic (existing code)
+        # Heart placement logic
         if country_code in ['israel', 'iran']:
-            # Random Allocation Strategy
-            # 'id' column existence is already checked and handled for these countries before this try block.
-            num_hearts = len(prayed_for_items_list)
-            all_hex_ids = list(hex_map_gdf['id'].unique())
-            if not all_hex_ids:
-                logging.warning(f"No hex IDs found in map data for {country_code}. Cannot place hearts.")
-            else:
-                sorted_hex_ids = sorted(all_hex_ids)
-                hex_ids_to_color = sorted_hex_ids[:num_hearts]
-                logging.debug(f"IR/ISR: Plotting {num_hearts} hearts on hex_ids: {hex_ids_to_color[:5]}...")
-                for hex_id_to_color in hex_ids_to_color:
-                    location_geom = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_color]
+            # Random Allocation Strategy - Use assigned hex_id from prayed_for_items_list
+            logging.debug(f"IR/ISR: Processing {len(prayed_for_items_list)} prayed items for heart placement using assigned hex_id.")
+            placed_heart_count = 0
+            for prayed_item in prayed_for_items_list:
+                # Ensure item is for the current country, though list is usually pre-filtered
+                if prayed_item.get('country_code') != country_code:
+                    continue
+
+                assigned_hex_id = prayed_item.get('hex_id')
+                if assigned_hex_id:
+                    location_geom = hex_map_gdf[hex_map_gdf['id'] == assigned_hex_id]
                     if not location_geom.empty:
                         centroid = location_geom.geometry.centroid.iloc[0]
                         heart_img = load_random_heart_image()
@@ -159,12 +158,18 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                             imagebox = OffsetImage(heart_img, zoom=0.6)
                             ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
                             ax.add_artist(ab)
+                            placed_heart_count += 1
                         else:
-                            logging.warning(f"Skipping heart placement for a hex in {country_code} due to missing heart image.")
+                            logging.warning(f"Skipping heart for hex ID {assigned_hex_id} in {country_code} (image load failed). Item: {prayed_item.get('person_name')}")
                     else:
-                        logging.warning(f"Geometry not found for hex ID {hex_id_to_color} in {country_code}.")
+                        logging.warning(f"Geometry not found for assigned hex ID {assigned_hex_id} in {country_code}. Cannot place heart. Item: {prayed_item.get('person_name')}")
+                else:
+                    # This prayed item for a random-allocation country does not have an assigned hex_id.
+                    # This could be old data or an issue in assignment.
+                    logging.warning(f"Prayed item {prayed_item.get('person_name')} for {country_code} (random alloc) has no assigned hex_id. Heart not placed.")
+            logging.debug(f"IR/ISR: Placed {placed_heart_count} hearts based on assigned hex_ids.")
         else:
-            # Specific Mapping Strategy
+            # Specific Mapping Strategy (remains the same)
             if post_label_mapping_df is None or post_label_mapping_df.empty:
                 logging.error(f"Post label mapping is missing or empty for {country_code}. Cannot map items to hexes.")
             elif not all(col in post_label_mapping_df.columns for col in ['post_label', 'name']):
@@ -214,27 +219,62 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
 
                         logging.debug(f"For {country_code} highlight: All map IDs: {len(all_hex_ids_set)}, Prayed (heart) IDs: {len(prayed_hex_ids_set)}, Available for highlight: {len(available_ids_for_highlight)}")
 
-                        if available_ids_for_highlight:
-                            hex_id_to_highlight = random.choice(available_ids_for_highlight)
-                            logging.info(f"Randomly selected hex ID {hex_id_to_highlight} for queue highlight in {country_code} from {len(available_ids_for_highlight)} available hexes.")
+                        # New logic: Prioritize pre-assigned hex_id for highlighting
+                        assigned_hex_id_for_highlight = top_queue_item.get('hex_id')
 
-                            location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
+                        if assigned_hex_id_for_highlight:
+                            logging.info(f"Attempting to highlight pre-assigned hex ID {assigned_hex_id_for_highlight} for queue item in {country_code}.")
+                            location_geom_q = hex_map_gdf[hex_map_gdf['id'] == assigned_hex_id_for_highlight]
                             if not location_geom_q.empty:
                                 geom = location_geom_q.geometry.iloc[0]
                                 if geom.geom_type == 'Polygon':
                                     hex_patch = Polygon(geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                     ax.add_patch(hex_patch)
                                 elif geom.geom_type == 'MultiPolygon':
-                                    for poly in list(geom.geoms): # Ensure iteration
-                                        hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
+                                    for poly_geom in list(geom.geoms): # Ensure iteration
+                                        hex_patch = Polygon(poly_geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                         ax.add_patch(hex_patch)
-                                logging.info(f"Highlighted hex {hex_id_to_highlight} for {country_code} (random strategy).")
+                                logging.info(f"Successfully highlighted pre-assigned hex ID {assigned_hex_id_for_highlight} for {country_code}.")
                             else:
-                                logging.warning(f"Highlight failed for {country_code}: Randomly selected hex ID {hex_id_to_highlight} found NO GEOMETRY in map data.")
+                                logging.warning(f"Highlight failed for {country_code}: Pre-assigned hex ID {assigned_hex_id_for_highlight} found NO GEOMETRY in map data. Falling back to random if possible.")
+                                # Fallback to old random selection if assigned_hex_id is invalid/not found (optional, or just log error)
+                                # For now, just logging. If this hex_id was assigned, it should be valid.
+                                # If we want a fallback here, we'd re-implement the "available_ids_for_highlight" logic.
                         else:
-                            logging.info(f"All hexes already prayed for in {country_code}, nothing to highlight for queue (random strategy).")
+                            # Fallback to original random selection if no hex_id was pre-assigned
+                            logging.info(f"No pre-assigned hex_id for top queue item in {country_code}. Attempting dynamic random highlight.")
+                            # This is the existing random selection logic
+                            num_hearts_already_plotted = 0
+                            # Correctly count hearts based on prayed_for_items_list that have valid hex_ids for this country
+                            prayed_hex_ids_set_for_highlight_fallback = set()
+                            for prayed_item_fallback in prayed_for_items_list:
+                                if prayed_item_fallback.get('country_code') == country_code and prayed_item_fallback.get('hex_id'):
+                                    prayed_hex_ids_set_for_highlight_fallback.add(prayed_item_fallback.get('hex_id'))
+
+                            all_hex_ids_list_fallback = list(hex_map_gdf['id'].unique())
+                            all_hex_ids_set_fallback = set(all_hex_ids_list_fallback)
+                            available_ids_for_highlight_fallback = list(all_hex_ids_set_fallback - prayed_hex_ids_set_for_highlight_fallback)
+
+                            if available_ids_for_highlight_fallback:
+                                hex_id_to_highlight_fallback = random.choice(available_ids_for_highlight_fallback)
+                                logging.info(f"Dynamically selected random hex ID {hex_id_to_highlight_fallback} for queue highlight in {country_code} from {len(available_ids_for_highlight_fallback)} available hexes.")
+                                location_geom_q_fallback = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight_fallback]
+                                if not location_geom_q_fallback.empty:
+                                    geom_fallback = location_geom_q_fallback.geometry.iloc[0]
+                                    if geom_fallback.geom_type == 'Polygon':
+                                        hex_patch = Polygon(geom_fallback.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
+                                        ax.add_patch(hex_patch)
+                                    elif geom_fallback.geom_type == 'MultiPolygon':
+                                        for poly_fallback in list(geom_fallback.geoms):
+                                            hex_patch = Polygon(poly_fallback.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
+                                            ax.add_patch(hex_patch)
+                                    logging.info(f"Highlighted hex {hex_id_to_highlight_fallback} for {country_code} (dynamic random strategy).")
+                                else:
+                                    logging.warning(f"Dynamic highlight failed for {country_code}: Randomly selected hex ID {hex_id_to_highlight_fallback} found NO GEOMETRY in map data.")
+                            else:
+                                logging.info(f"All hexes already prayed for (or have assigned hex_ids) in {country_code}, nothing to highlight for queue (dynamic random strategy).")
                 else:
-                    # Specific Mapping Highlighting
+                    # Specific Mapping Highlighting (remains the same)
                     if post_label_mapping_df is not None and not post_label_mapping_df.empty and \
                        all(col in post_label_mapping_df.columns for col in ['post_label', 'name']) and \
                        'name' in hex_map_gdf.columns:
