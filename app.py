@@ -644,6 +644,8 @@ def update_queue():
                 hex_id_to_insert = item_to_add.get('hex_id') # Get the assigned hex_id
 
                 current_ts_for_status = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                # ADDING DIAGNOSTIC LOGGING HERE
+                logging.debug(f"[update_queue] Preparing to insert: Name='{person_name}', Country='{country_code_add}', HexID='{hex_id_to_insert}', PostLabel='{post_label}', Party='{party_add}'")
                 try:
                     cursor.execute('''
                         INSERT OR IGNORE INTO prayer_candidates
