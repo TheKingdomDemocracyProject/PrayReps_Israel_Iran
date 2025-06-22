@@ -320,8 +320,8 @@ def initialize_app_data():
     logging.debug("Application data initialization complete.") # Changed from INFO to DEBUG
 
     # Start the queue updating thread
-    logging.info("Starting the update_queue background thread.") # Kept as INFO
-    threading.Thread(target=update_queue, daemon=True).start()
+    # logging.info("Starting the update_queue background thread.") # Kept as INFO
+    # threading.Thread(target=update_queue, daemon=True).start()
 
 def migrate_json_logs_to_db():
     """Migrates data from old JSON log files to the prayed_items SQLite table if the table is empty."""
@@ -721,6 +721,7 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
 
 @app.route('/')
 def home():
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
     total_prayed_for_all_countries = sum(len(prayed_for_data[country]) for country in COUNTRIES_CONFIG.keys())
     current_remaining = total_all_countries - total_prayed_for_all_countries
@@ -945,6 +946,7 @@ def process_item():
 @app.route('/statistics/', defaults={'country_code': None})
 @app.route('/statistics/<country_code>')
 def statistics(country_code):
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     if country_code is None:
         country_code = list(COUNTRIES_CONFIG.keys())[0]
         return redirect(url_for('statistics', country_code=country_code))
@@ -981,6 +983,7 @@ def statistics(country_code):
 
 @app.route('/statistics/data/<country_code>')
 def statistics_data(country_code):
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     if country_code not in COUNTRIES_CONFIG:
         return jsonify({"error": "Country not found"}), 404
 
@@ -998,6 +1001,7 @@ def statistics_data(country_code):
 
 @app.route('/statistics/timedata/<country_code>')
 def statistics_timedata(country_code):
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     if country_code not in COUNTRIES_CONFIG:
         return jsonify({"error": "Country not found"}), 404
 
@@ -1018,7 +1022,10 @@ def statistics_timedata(country_code):
 @app.route('/prayed/', defaults={'country_code': None})
 @app.route('/prayed/<country_code>')
 def prayed_list(country_code):
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
+
     if country_code is None:
+        # If redirecting, load_prayed_for_data_from_db() will run again in the new request, which is fine.
         country_code = list(COUNTRIES_CONFIG.keys())[0]
         return redirect(url_for('prayed_list', country_code=country_code))
 
@@ -1058,6 +1065,7 @@ def prayed_list(country_code):
 # Routes for Overall Statistics
 @app.route('/statistics/overall')
 def statistics_overall():
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     return render_template('statistics.html',
                            country_code='overall',
                            country_name='Overall',
@@ -1067,11 +1075,13 @@ def statistics_overall():
 
 @app.route('/statistics/data/overall')
 def statistics_data_overall():
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     total_prayed_count = sum(len(prayed_list) for prayed_list in prayed_for_data.values())
     return jsonify({'Overall': total_prayed_count})
 
 @app.route('/statistics/timedata/overall')
 def statistics_timedata_overall():
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     all_prayed_items = []
     for country_items in prayed_for_data.values():
         all_prayed_items.extend(country_items)
@@ -1096,6 +1106,7 @@ def statistics_timedata_overall():
 # Route for Overall Prayed List
 @app.route('/prayed/overall')
 def prayed_list_overall():
+    load_prayed_for_data_from_db() # <--- ADD THIS LINE
     overall_prayed_list_display = []
     for country_code, items_list in prayed_for_data.items():
         for item in items_list:
