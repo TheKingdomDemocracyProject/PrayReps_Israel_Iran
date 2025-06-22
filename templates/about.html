@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}About PrayReps{% endblock %}
+
+{% block page_title %}About PrayReps{% endblock %}
+
+{% block content %}
+<div class="content-container text-content">
+    <h2>Welcome to PrayReps!</h2>
+    <p>
+        PrayReps is a tool designed to help individuals and groups systematically pray for elected
+        representatives. This version focuses on the representatives serving the countries of
+        <strong>Israel</strong> and <strong>Iran</strong>.
+    </p>
+    <p>
+        Our vision is to foster consistent and informed prayer for those in leadership,
+        believing that prayer can make a difference in their lives, their work, and the
+        nations they serve.
+    </p>
+
+    <h3>How It Works</h3>
+    <ol>
+        <li>
+            <strong>View Representative:</strong> On the <a href="{{ url_for('main.home') }}">Home page</a>,
+            you'll be presented with one representative at a time. You'll see their name,
+            photo (if available), political party, and the country they serve.
+        </li>
+        <li>
+            <strong>The Map:</strong> A hexagonal map of the representative's country is displayed.
+            <ul>
+                <li>The area the current representative is associated with will be highlighted (usually in yellow).</li>
+                <li>Locations for representatives you've already prayed for will be marked with a heart icon (❤️).</li>
+            </ul>
+        </li>
+        <li>
+            <strong>Pray:</strong> Take a moment to pray for the displayed representative.
+        </li>
+        <li>
+            <strong>Mark as Prayed:</strong> Once you've prayed, click the "🙏 Amen" button.
+            This records your prayer, marks their location on the map with a heart, and then
+            presents the next representative from the queue.
+        </li>
+    </ol>
+
+    <h3>Navigating the Site</h3>
+    <ul>
+        <li><strong>Home:</strong> Your main page for praying for representatives.</li>
+        <li><strong>Queue:</strong> See the <a href="{{ url_for('prayer.queue_page_html') }}">full list</a> of representatives currently waiting for prayer.</li>
+        <li><strong>Prayed List:</strong> View a <a href="{{ url_for('prayer.prayed_list_default_redirect') }}">list of all representatives</a> you've prayed for. You can also choose to put someone back into the prayer queue from this page if you wish to pray for them again.</li>
+        <li><strong>Statistics:</strong> Explore <a href="{{ url_for('stats.statistics_default_redirect') }}">prayer statistics</a>, including breakdowns by party and prayer activity over time.</li>
+    </ul>
+
+    <h3>The Vision</h3>
+    <p>
+        This application is inspired by the vision of the <a href="https://kingdomdemocracy.global/" target="_blank" rel="noopener noreferrer">Kingdom Democracy Project</a>,
+        which seeks to encourage Christians to engage positively with democratic processes, including
+        praying for those in authority. While this is a simple tool, we hope it serves as a helpful resource.
+    </p>
+    <p>
+        Thank you for using PrayReps!
+    </p>
+</div>
+{% endblock %}

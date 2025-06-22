@@ -1,47 +1,50 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Praying for elected representatives around the world</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="queuecontent">
-        <h1>Prayer Queue (All Countries)</h1>
-        <div class="links">
-            <a href="{{ url_for('home') }}">Back to Main</a>
-            {# Assuming default_country_code logic similar to index.html for these links if needed #}
-            {# Or link to a generic /prayed and /statistics landing page if those exist #}
-            {# For now, let's make them simple, assuming user can navigate from there #}
-            <a href="{{ url_for('prayed_list') }}">View prayed for representatives</a>
-            <a href="{{ url_for('statistics') }}">View Statistics</a>
-        </div>
-        <div class="queue-list-container"> {# Changed class name for clarity if .queue-list is too generic #}
-            <ul class="queue-list"> {# Ensure this class is present for the new CSS rules #}
+{% extends "base.html" %}
+
+{% block title %}Prayer Queue{% endblock %}
+
+{% block page_title %}Prayer Queue (All Countries){% endblock %}
+
+{% block content %}
+    <div class="queuecontent content-container">
+        {# Main navigation links are now in base.html header #}
+        {# This page might not need additional page-specific actions beyond the list itself #}
+
+        <div class="queue-list-container">
+            <ul class="queue-list">
                 {% for item in queue %}
                 <li>
-                    <span class="country-flag">{{ all_countries[item.country_code].flag if item.country_code and item.country_code in all_countries and all_countries[item.country_code].flag else '' }}</span>
+                    <span class="country-flag">{{ all_countries_config[item.country_code].flag if item.country_code and item.country_code in all_countries_config and all_countries_config[item.country_code].flag else '' }}</span>
+
+                    {% if item.thumbnail %}
+                        <img src="{{ item.thumbnail }}" alt="Image of {{ item.person_name }}" class="queue-thumbnail">
+                    {% else %}
+                        <img src="{{ url_for('static', filename=HEART_IMG_PATH_RELATIVE | replace('heart_red.png', 'heart_outline.png') ) }}" alt="Default placeholder" class="queue-thumbnail default-thumb">
+                    {% endif %}
+
                     <span class="person-name">{{ item.person_name }}</span>
                     <span class="item-details">
-                        {% if item.party and item.party != 'Other' %}({{ item.party }}){% endif %}
-                        - {{ item.place or 'N/A' }}
-                        - Country: {{ all_countries[item.country_code].name if item.country_code and item.country_code in all_countries else 'Unknown' }}
+                        {% set party_name = item.party | default("Other") %}
+                        {% set party_color = party_info_all_countries[item.country_code][party_name].color if item.country_code in party_info_all_countries and party_name in party_info_all_countries[item.country_code] else "#CCCCCC" %}
+
+                        Party: <span style="color: {{ party_color }};">{{ party_name }}</span>
+                        <br>
+                        {% if item.post_label and item.post_label|string|trim != "" and item.post_label != 'N/A' %}
+                            Constituency: {{ item.post_label }}
+                        {% else %}
+                            Constituency: N/A
+                        {% endif %}
+                        <br>
+                        Country: {{ all_countries_config[item.country_code].name if item.country_code and item.country_code in all_countries_config else 'Unknown' }}
                     </span>
-                    {% if item.thumbnail and item.thumbnail != HEART_IMG_PATH %} {# Assuming HEART_IMG_PATH is available or logic is simplified #}
-                        <img src="{{ item.thumbnail }}" alt="Image of {{ item.person_name }}" class="queue-thumbnail">
-                    {% endif %}
                 </li>
                 {% else %}
                 <li>The queue is currently empty.</li>
                 {% endfor %}
             </ul>
         </div>
-        <div class="links">
-            <a href="{{ url_for('home') }}">Back to Main</a>
-        </div>
     </div>
-    <script>
-        // You can add any additional JavaScript here if needed
-    </script>
-</body>
-</html>
+{% endblock %}
+
+{% block scripts_extra %}
+    {# No page-specific JavaScript needed for now for queue.html #}
+{% endblock %}

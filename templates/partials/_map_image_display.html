@@ -1,0 +1,8 @@
+{# This partial is swapped by HTMX into #map-image-container #}
+{% if _oob_swap_id %}
+<div id="{{ _oob_swap_id }}" hx-swap-oob="true">
+    <img id="hexmap-image" src="{{ map_image_path }}" alt="Hex Map of {{ current_country_name if current_country_name else 'current region' }}" class="hex-map">
+</div>
+{% else %}
+    <img id="hexmap-image" src="{{ map_image_path }}" alt="Hex Map of {{ current_country_name if current_country_name else 'current region' }}" class="hex-map">
+{% endif %}

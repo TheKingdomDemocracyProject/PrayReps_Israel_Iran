@@ -1,0 +1,62 @@
+{# This partial is swapped by HTMX into #current-item-container #}
+{# It also re-renders the Amen button with updated hx-vals if needed, or disables it #}
+
+{% if current %}
+    <div class="profile">
+        <div class="profile-image-container">
+            {% if current.thumbnail %}
+                <img id="profileImage" src="{{ current.thumbnail }}" alt="Profile image of {{ current.person_name }}">
+            {% else %}
+                {# You can use a placeholder image or style the div #}
+                <img id="profileImage" src="{{ url_for('static', filename=HEART_IMG_PATH_RELATIVE) }}" alt="Default profile image placeholder" class="default-profile-image">
+            {% endif %}
+        </div>
+        <div class="profile-text">
+            {% set country_name = all_countries_config[current.country_code].name if current.country_code in all_countries_config else "an unknown country" %}
+            {% set party_name = current.party | default("N/A") %}
+            {% set party_color = party_info_all_countries[current.country_code][current.party].color if current.country_code in party_info_all_countries and current.party in party_info_all_countries[current.country_code] else "#CCCCCC" %}
+
+
+            Praying for <strong>{{ current.person_name }}</strong>
+            <br>
+            <small>
+                Serving {{ country_name }}
+                {% if current.post_label and current.post_label != 'N/A' and current.post_label.strip() != '' %}
+                    representing {{ current.post_label }}
+                {% endif %}
+                <br>
+                Party: <span style="color: {{ party_color }}; font-weight: bold;">{{ party_name }}</span>
+            </small>
+        </div>
+    </div>
+{% else %}
+    <div class="sentence-box">
+        <p>All prayers complete or the queue is currently empty. Thank you for praying!</p>
+        <p>You can <a href="{{ url_for('main.purge_data_route') }}">purge and restart</a> the queue if you are an administrator, or check back later.</p>
+    </div>
+{% endif %}
+
+{# The Amen button is part of the main index.html to control its hx-post target,
+   but its state (disabled/enabled) and hx-vals can be updated by the server response
+   if the server returns a new button definition with hx-swap-oob="true" for the button itself.
+   Or, as done now, the main index.html re-renders the button based on `current`
+   when this partial is swapped into its container.
+   The hx-vals on the button in index.html should be for the *newly displayed current item*.
+   This means the _current_item_display.html, when it renders a new `current` item,
+   implicitly means the button in index.html (if not swapped itself) should now refer to this new `current.id`.
+
+   A cleaner HTMX approach is for this partial to *also* include the button,
+   so when #current-item-container is swapped, the button with correct hx-vals is also swapped.
+#}
+<div class="controls"> {# Removed id and hx-swap-oob from here, button is main actor #}
+    {% if current %}
+    <button id="amen-button"
+            hx-post="{{ url_for('prayer.process_item_htmx') }}"
+            hx-vals='{"item_id": "{{ current.id }}"}'
+            hx-target="#main-interaction-content" {# Target the new outer container on index.html #}
+            hx-swap="innerHTML" {# Replace the content of main-interaction-content #}
+            >🙏 Amen</button>
+    {% else %}
+    <button id="amen-button" disabled>🙏 Amen</button>
+    {% endif %}
+</div>

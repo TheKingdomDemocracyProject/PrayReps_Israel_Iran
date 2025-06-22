@@ -1,0 +1,16 @@
+{# This partial is swapped by HTMX into #stats-summary-container #}
+{% if _oob_swap_id %}
+<div id="{{ _oob_swap_id }}" hx-swap-oob="true">
+    <div class="queue-info">
+        <div>Representatives left to pray for: <span id="remaining-count">{{ remaining }}</span></div>
+        <div>Representatives waiting in queue: <span id="queue-size-count">{{ queue_size }}</span></div>
+        <div>Total prayed for overall: <span id="total-prayed-overall-count">{{ total_prayed_overall }}</span></div>
+    </div>
+</div>
+{% else %}
+<div class="queue-info">
+    <div>Representatives left to pray for: <span id="remaining-count">{{ remaining }}</span></div>
+    <div>Representatives waiting in queue: <span id="queue-size-count">{{ queue_size }}</span></div>
+    <div>Total prayed for overall: <span id="total-prayed-overall-count">{{ total_prayed_overall }}</span></div>
+</div>
+{% endif %}
