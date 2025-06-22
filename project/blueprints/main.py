@@ -22,7 +22,7 @@ from ..utils import format_pretty_timestamp
 
 bp = Blueprint('main', __name__)
 
-@bp.route('/')
+@bp.route('/', endpoint='home') # Explicitly name the endpoint
 def home():
     current_app.logger.info("Home page requested.")
 
