@@ -421,7 +421,7 @@ def get_current_queue_items_from_db():
             SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp, hex_id
             FROM prayer_candidates
             WHERE status = 'queued'
-            ORDER BY RANDOM()
+            ORDER BY id ASC
         """)
         rows = cursor.fetchall()
         for row in rows:
