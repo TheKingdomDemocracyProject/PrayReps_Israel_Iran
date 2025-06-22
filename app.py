@@ -479,6 +479,7 @@ def update_queue():
         try:
             logging.info("[update_queue] Attempting to connect to DB.") # Kept original log
             conn = sqlite3.connect(DATABASE_URL)
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
             # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
