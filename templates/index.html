@@ -7,12 +7,14 @@
 {% block head_extra %}
     {# Any page-specific head elements, like specific JS variables if not handled by context processors #}
     <script>
-        // These are now available via context processor 'inject_global_template_variables' in main.py
-        // and can be accessed in templates as `all_countries_config` and `party_info_all_countries`
-        // For direct JS access (if needed outside of template rendering):
-        // const ALL_COUNTRIES_CONFIG_JS = {{ all_countries_config | tojson | safe }};
-        // const PARTY_INFO_ALL_COUNTRIES_JS = {{ party_info_all_countries | tojson | safe }};
-        let initialMapCountryCode = {{ initial_map_country_code | tojson | safe }};
+        // Provide defaults for tojson filter to prevent errors if vars are None or Undefined.
+        let initialMapCountryCode = {{ initial_map_country_code | default(None) | tojson | safe }};
+
+        {# These lines were suspected to cause issues if all_countries_config or party_info_all_countries were Undefined.
+           They are currently JS-commented out. If they were to be used, they'd also need defaults.
+        // const ALL_COUNTRIES_CONFIG_JS = {{ all_countries_config | default({}) | tojson | safe }};
+        // const PARTY_INFO_ALL_COUNTRIES_JS = {{ party_info_all_countries | default({}) | tojson | safe }};
+        #}
     </script>
 {% endblock %}
 
