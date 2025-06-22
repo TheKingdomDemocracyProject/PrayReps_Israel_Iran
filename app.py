@@ -973,24 +973,32 @@ def process_item():
         if conn: conn.close()
 
     if item_processed and processed_item_details:
-        # Map plotting logic (remains largely the same, uses processed_item_details)
         try:
             country_code_plot = processed_item_details['country_code']
+
+            # **Critical Fix**: Reload prayed data for the specific country
+            # to ensure in-memory `prayed_for_data` is up-to-date before plotting.
+            logging.info(f"[/process_item] Reloading prayed data for country {country_code_plot} before map plotting.")
+            reload_single_country_prayed_data_from_db(country_code_plot)
+
             hex_map_gdf = HEX_MAP_DATA_STORE.get(country_code_plot)
             post_label_df = POST_LABEL_MAPPINGS_STORE.get(country_code_plot)
-            # The queue for map plotting is the *new* state of the overall queue
             current_sqlite_queue_for_map = get_current_queue_items_from_db()
 
-            logging.debug(f"[/process_item] Map update for country: {country_code_plot} after processing ID={item_id_to_process}")
+            logging.debug(f"[/process_item] Map update for country: {country_code_plot} after processing ID={item_id_to_process} and reloading prayed data.")
+
+            # Ensure prayed_for_data[country_code_plot] is accessed *after* reload
             if hex_map_gdf is not None and not hex_map_gdf.empty and post_label_df is not None:
                 plot_hex_map_with_hearts(
                     hex_map_gdf,
                     post_label_df,
-                    prayed_for_data[country_code_plot], # Updated prayed list for this country
-                    current_sqlite_queue_for_map,    # Freshly fetched overall queue
+                    prayed_for_data[country_code_plot], # This should now be fresh
+                    current_sqlite_queue_for_map,
                     country_code_plot
                 )
-            # else: logging for missing map data already exists
+            else:
+                logging.warning(f"[/process_item] Cannot plot map for {country_code_plot}. Hex map GDF or post_label_df might be missing/empty.")
+
         except Exception as e_map_plotting:
             logging.error(f"Error during map plotting in /process_item for ID={item_id_to_process}: {e_map_plotting}", exc_info=True)
 
