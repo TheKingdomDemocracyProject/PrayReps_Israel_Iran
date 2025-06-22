@@ -202,24 +202,35 @@ def plot_hex_map_with_hearts(hex_map_gdf, post_label_mapping_df, prayed_for_item
                     # Random Allocation Highlighting
                     if 'id' in hex_map_gdf.columns: # Should be true due to earlier check
                         num_hearts_already_plotted = len(prayed_for_items_list)
-                        all_hex_ids = list(hex_map_gdf['id'].unique())
-                        sorted_hex_ids = sorted(all_hex_ids)
-                        if num_hearts_already_plotted < len(sorted_hex_ids):
-                            hex_id_to_highlight = sorted_hex_ids[num_hearts_already_plotted]
+                        all_hex_ids_list = list(hex_map_gdf['id'].unique()) # All unique IDs from the map
+
+                        # Determine hexes that already have hearts
+                        # Assuming heart placement logic uses sorted IDs:
+                        sorted_all_hex_ids = sorted(all_hex_ids_list)
+                        prayed_hex_ids_set = set(sorted_all_hex_ids[:num_hearts_already_plotted])
+
+                        all_hex_ids_set = set(all_hex_ids_list)
+                        available_ids_for_highlight = list(all_hex_ids_set - prayed_hex_ids_set)
+
+                        logging.debug(f"For {country_code} highlight: All map IDs: {len(all_hex_ids_set)}, Prayed (heart) IDs: {len(prayed_hex_ids_set)}, Available for highlight: {len(available_ids_for_highlight)}")
+
+                        if available_ids_for_highlight:
+                            hex_id_to_highlight = random.choice(available_ids_for_highlight)
+                            logging.info(f"Randomly selected hex ID {hex_id_to_highlight} for queue highlight in {country_code} from {len(available_ids_for_highlight)} available hexes.")
+
                             location_geom_q = hex_map_gdf[hex_map_gdf['id'] == hex_id_to_highlight]
                             if not location_geom_q.empty:
                                 geom = location_geom_q.geometry.iloc[0]
                                 if geom.geom_type == 'Polygon':
                                     hex_patch = Polygon(geom.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                     ax.add_patch(hex_patch)
-                                    logging.info(f"Highlighted next hex {hex_id_to_highlight} for {country_code} (random strategy).")
                                 elif geom.geom_type == 'MultiPolygon':
-                                    for poly in list(geom.geoms): # Ensure iteration over actual polygons
+                                    for poly in list(geom.geoms): # Ensure iteration
                                         hex_patch = Polygon(poly.exterior.coords, closed=True, edgecolor='black', facecolor='yellow', alpha=0.8, linewidth=2)
                                         ax.add_patch(hex_patch)
-                                    logging.info(f"Highlighted next (multi)hex {hex_id_to_highlight} for {country_code} (random strategy).")
+                                logging.info(f"Highlighted hex {hex_id_to_highlight} for {country_code} (random strategy).")
                             else:
-                                logging.warning(f"Could not find geometry for next hex ID {hex_id_to_highlight} in {country_code}.")
+                                logging.warning(f"Highlight failed for {country_code}: Randomly selected hex ID {hex_id_to_highlight} found NO GEOMETRY in map data.")
                         else:
                             logging.info(f"All hexes already prayed for in {country_code}, nothing to highlight for queue (random strategy).")
                 else:

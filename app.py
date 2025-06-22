@@ -479,7 +479,7 @@ def update_queue():
         try:
             logging.info("[update_queue] Attempting to connect to DB.") # Kept original log
             conn = sqlite3.connect(DATABASE_URL)
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = sqlite3.Row # <--- ADD THIS LINE
             cursor = conn.cursor()
 
             # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
@@ -1220,7 +1220,41 @@ def put_back_in_queue():
 
         # This logging uses log_display_post_label for clarity on what's being queried
         logging.info(f"Preparing to put back item: Name='{person_name}', PostLabel for DB Query={log_display_post_label}, Country='{item_country_code_from_form}'.")
-        # --- End of new DB query logic for post_label ---
+
+        # --- START OF NEW DIAGNOSTIC BLOCK ---
+        diag_conn = None
+        try:
+            diag_conn = sqlite3.connect(DATABASE_URL)
+            diag_conn.row_factory = sqlite3.Row # Important for accessing by column name
+            diag_cursor = diag_conn.cursor()
+
+            select_query_sql = "SELECT * FROM prayer_candidates WHERE person_name = ? AND country_code = ?"
+            params = [person_name, item_country_code_from_form]
+
+            if is_post_label_null_in_db_query:
+                select_query_sql += " AND post_label IS NULL"
+            else:
+                select_query_sql += " AND post_label = ?"
+                params.append(query_post_label_value_for_db)
+
+            logging.debug(f"[DIAGNOSTIC] Executing SELECT: {select_query_sql} with params {params}")
+            diag_cursor.execute(select_query_sql, tuple(params))
+            diagnostic_row = diag_cursor.fetchone()
+
+            if diagnostic_row:
+                logging.info(f"[DIAGNOSTIC] Found existing record for {person_name} ({log_display_post_label}, {item_country_code_from_form}): Status='{diagnostic_row['status']}', Timestamp='{diagnostic_row['status_timestamp']}', ID='{diagnostic_row['id']}'")
+            else:
+                logging.warning(f"[DIAGNOSTIC] No record found for {person_name} ({log_display_post_label}, {item_country_code_from_form}) with the specified name/post_label/country combination.")
+
+        except sqlite3.Error as e_diag:
+            logging.error(f"[DIAGNOSTIC] SQLite error during diagnostic select: {e_diag}")
+        except Exception as e_diag_generic:
+            logging.error(f"[DIAGNOSTIC] Generic error during diagnostic select: {e_diag_generic}", exc_info=True)
+        finally:
+            if diag_conn:
+                diag_conn.close()
+        # --- END OF NEW DIAGNOSTIC BLOCK ---
+        # --- End of new DB query logic for post_label --- # This comment seems misplaced, it should be after the DB query logic section, not after diagnostic. Let's assume it's a marker for the end of the section modified earlier.
 
         # The part finding item_to_put_back_from_memory can remain as is, using post_label_key_search_for_memory
         # This section is primarily for fetching the full item details if needed, though not strictly required if keys are sufficient.
