@@ -721,7 +721,13 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
 
 @app.route('/')
 def home():
-    load_prayed_for_data_from_db() # <--- ADD THIS LINE
+    load_prayed_for_data_from_db() # <--- THIS LINE WAS ALREADY ADDED
+    total_prayed_count_in_memory = sum(len(prayed_list) for prayed_list in prayed_for_data.values())
+    logging.info(f"[home] After load_prayed_for_data_from_db(), total prayed items in memory: {total_prayed_count_in_memory}.")
+    # For more detail (optional, can be verbose):
+    # for c_code, data_list in prayed_for_data.items():
+    #     if data_list: # Only log if there are items
+    #         logging.debug(f"[home] Prayed data for {c_code} (first 1 if any): {data_list[:1]}")
     total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
     total_prayed_for_all_countries = sum(len(prayed_for_data[country]) for country in COUNTRIES_CONFIG.keys())
     current_remaining = total_all_countries - total_prayed_for_all_countries
@@ -890,7 +896,9 @@ def process_item():
 
             if cursor.rowcount > 0:
                 conn.commit()
-                logging.info(f"Successfully updated item ID={item_id_to_process} to 'prayed'.")
+                # logging.info(f"Successfully updated item ID={item_id_to_process} to 'prayed'.") # Old log
+                logging.info(f"[process_item] Successfully committed DB update for item ID={item_id_to_process} to 'prayed'.")
+                # Note: In-memory prayed_for_data is NOT directly updated by process_item anymore. Relies on subsequent fresh loads by other routes.
                 item_processed = True
                 processed_item_details = {
                     'person_name': item_to_process['person_name'],
@@ -900,10 +908,11 @@ def process_item():
                     'thumbnail': item_to_process.get('thumbnail'),
                     'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S')
                 }
-                if country_code_item in prayed_for_data:
-                    prayed_for_data[country_code_item].append(processed_item_details)
-                # else: logging for unknown country_code_item already exists or can be added
-
+                # This block should be removed or commented out:
+                # if country_code_item in prayed_for_data:
+                #     prayed_for_data[country_code_item].append(processed_item_details)
+                # else:
+                #     logging.warning(f"Country code {country_code_item} not found in prayed_for_data for item {person_name_to_log}. In-memory list not updated by process_item.")
             else:
                 conn.rollback()
                 logging.warning(f"Item ID={item_id_to_process} (Name={person_name_to_log}) was not updated to 'prayed'; status may have changed or item no longer exists as 'queued'.")
@@ -1022,20 +1031,38 @@ def statistics_timedata(country_code):
 @app.route('/prayed/', defaults={'country_code': None})
 @app.route('/prayed/<country_code>')
 def prayed_list(country_code):
-    load_prayed_for_data_from_db() # <--- ADD THIS LINE
+    load_prayed_for_data_from_db() # <--- THIS LINE WAS ALREADY ADDED
 
     if country_code is None:
         # If redirecting, load_prayed_for_data_from_db() will run again in the new request, which is fine.
-        country_code = list(COUNTRIES_CONFIG.keys())[0]
-        return redirect(url_for('prayed_list', country_code=country_code))
+        country_code = list(COUNTRIES_CONFIG.keys())[0] # Default to first country if none provided
+        # For an overall view, we might expect a specific URL like /prayed/overall
+        # This redirect ensures country_code is always a specific country or handled by 'overall' logic path
+        if country_code: # Check if COUNTRIES_CONFIG was empty
+             return redirect(url_for('prayed_list', country_code=country_code))
+        else: # No countries configured, perhaps redirect to a page indicating this
+             return redirect(url_for('home')) # Fallback, or a dedicated "no data" page
 
-    if country_code not in COUNTRIES_CONFIG:
+    if country_code == 'overall':
+        # This will be handled by prayed_list_overall route now,
+        # but if direct navigation to /prayed/overall happens, this logic is fine.
+        # The logging for 'overall' is better placed in prayed_list_overall itself.
+        pass # Overall logic is handled by a different route or below
+    elif country_code not in COUNTRIES_CONFIG:
         logging.warning(f"Invalid country code '{country_code}' for prayed list. Redirecting to default.")
-        default_country_code = list(COUNTRIES_CONFIG.keys())[0]
-        return redirect(url_for('prayed_list', country_code=default_country_code))
+        default_country_code = list(COUNTRIES_CONFIG.keys())[0] if COUNTRIES_CONFIG else None
+        if default_country_code:
+            return redirect(url_for('prayed_list', country_code=default_country_code))
+        else:
+            return redirect(url_for('home')) # Fallback if no countries configured
 
-    # Data is loaded from DB at startup.
-    # No need to call read_log(country_code) here.
+    # Ensure this is after country_code is finalized and checked
+    if country_code and country_code != 'overall' and country_code in prayed_for_data:
+        logging.info(f"[/prayed/{country_code}] After load_prayed_for_data_from_db(), items for this country in memory: {len(prayed_for_data[country_code])}.")
+    # elif country_code == 'overall': # This logging is better in prayed_list_overall
+    #     total_prayed_overall = sum(len(lst) for lst in prayed_for_data.values())
+    #     logging.info(f"[/prayed/overall] After load_prayed_for_data_from_db(), total prayed items in memory: {total_prayed_overall}.")
+
     current_country_party_info = party_info.get(country_code, {})
     # Ensure 'Other' exists in current_country_party_info for fallback
     other_party_default = {'short_name': 'Other', 'color': '#CCCCCC'}
@@ -1236,36 +1263,39 @@ def put_back_in_queue():
         diag_conn = None
         try:
             diag_conn = sqlite3.connect(DATABASE_URL)
-            diag_conn.row_factory = sqlite3.Row # Important for accessing by column name
+            diag_conn.row_factory = sqlite3.Row
             diag_cursor = diag_conn.cursor()
 
-            select_query_sql = "SELECT * FROM prayer_candidates WHERE person_name = ? AND country_code = ?"
-            params = [person_name, item_country_code_from_form]
+            # Base of the SELECT query
+            diag_select_sql = "SELECT * FROM prayer_candidates WHERE person_name = ? AND country_code = ?"
+            diag_params = [person_name, item_country_code_from_form]
 
-            if is_post_label_null_in_db_query:
-                select_query_sql += " AND post_label IS NULL"
-            else:
-                select_query_sql += " AND post_label = ?"
-                params.append(query_post_label_value_for_db)
+            # Conditionally add post_label check
+            if is_post_label_null_in_db_query: # True if post_label_form was None, empty, or whitespace
+                diag_select_sql += " AND post_label IS NULL"
+                # No change to diag_params needed
+            else: # post_label_form has actual content
+                diag_select_sql += " AND post_label = ?"
+                diag_params.append(query_post_label_value_for_db) # query_post_label_value_for_db holds the actual string
 
-            logging.debug(f"[DIAGNOSTIC] Executing SELECT: {select_query_sql} with params {params}")
-            diag_cursor.execute(select_query_sql, tuple(params))
+            logging.debug(f"[DIAGNOSTIC] Executing SELECT: {diag_select_sql} with params {diag_params}")
+            diag_cursor.execute(diag_select_sql, tuple(diag_params)) # Ensure diag_params is a tuple
             diagnostic_row = diag_cursor.fetchone()
 
             if diagnostic_row:
-                logging.info(f"[DIAGNOSTIC] Found existing record for {person_name} ({log_display_post_label}, {item_country_code_from_form}): Status='{diagnostic_row['status']}', Timestamp='{diagnostic_row['status_timestamp']}', ID='{diagnostic_row['id']}'")
+                logging.info(f"[DIAGNOSTIC] Found existing record for {person_name} (PostLabel in form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}): Status='{diagnostic_row['status']}', DB PostLabel='{diagnostic_row['post_label']}', ID='{diagnostic_row['id']}'")
             else:
-                logging.warning(f"[DIAGNOSTIC] No record found for {person_name} ({log_display_post_label}, {item_country_code_from_form}) with the specified name/post_label/country combination.")
+                logging.warning(f"[DIAGNOSTIC] No record found for {person_name} (PostLabel in form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}) with the specified name/post_label/country combination.")
 
         except sqlite3.Error as e_diag:
-            logging.error(f"[DIAGNOSTIC] SQLite error during diagnostic select: {e_diag}")
+            logging.error(f"[DIAGNOSTIC] SQLite error during diagnostic select: {e_diag}", exc_info=True) # Add exc_info
         except Exception as e_diag_generic:
             logging.error(f"[DIAGNOSTIC] Generic error during diagnostic select: {e_diag_generic}", exc_info=True)
         finally:
             if diag_conn:
                 diag_conn.close()
         # --- END OF NEW DIAGNOSTIC BLOCK ---
-        # --- End of new DB query logic for post_label --- # This comment seems misplaced, it should be after the DB query logic section, not after diagnostic. Let's assume it's a marker for the end of the section modified earlier.
+        # --- End of new DB query logic for post_label --- # This comment is correctly placed after the original logic block it refers to.
 
         # The part finding item_to_put_back_from_memory can remain as is, using post_label_key_search_for_memory
         # This section is primarily for fetching the full item details if needed, though not strictly required if keys are sufficient.
