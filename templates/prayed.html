@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
 </head>
 <body>
     <div class="prayedcontent">
@@ -39,10 +40,13 @@
                     was prayed for {{ item.formatted_timestamp }}.
                 </span>
                 {% if country_code != 'overall' %}
-                    <form method="POST" action="{{ url_for('put_back_in_queue') }}" style="display: inline;">
+                    <form hx-post="{{ url_for('put_back_in_queue') }}"
+                          hx-target=".prayed-list"
+                          hx-swap="innerHTML"
+                          style="display: inline;">
                         <input type="hidden" name="person_name" value="{{ item.person_name }}">
                         <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
-                        <input type="hidden" name="country_code" value="{{ country_code }}"> {# This should be item.country_code if on overall page, but overall hides this form #}
+                        <input type="hidden" name="country_code" value="{{ country_code }}">
                         <button type="submit">Put Back in Queue</button>
                     </form>
                 {% endif %}

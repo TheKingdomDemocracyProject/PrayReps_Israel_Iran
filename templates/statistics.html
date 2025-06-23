@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Praying for elected representatives around the world</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script>
@@ -167,35 +168,176 @@
     </script>
 </head>
 <body>
-    <div class="statscontent">
-        <h1>Statistics for {{ country_name }}</h1>
-        <div class="links">
+    <div id="statistics-page-wrapper"> {# Outer wrapper for potential full page hx-boost like scenarios, not strictly needed for current plan #}
+        <div class="links"> {# These links are outside the swappable area #}
             <a href="{{ url_for('home') }}">Back to Main</a>
             <a href="{{ url_for('queue_page') }}">View Queue</a>
-			<a href="{{ url_for('prayed_list', country_code=country_code) }}">View prayed for representatives for {{ country_name }}</a>
         </div>
-        <div class="country-switch-links">
-            Switch to:
-            <a href="{{ url_for('statistics_overall') }}">Overall Statistics</a>
-            {% for code, config in all_countries.items() %}
-                {% if code != country_code %}  {# Optionally hide link to current country view #}
-                    <a href="{{ url_for('statistics', country_code=code) }}">{{ config.name }} Statistics</a>
-                {% endif %}
-            {% endfor %}
-        </div>
-        <div class="statistics">
-            <canvas id="timeChart"></canvas>
-        </div>
-        <div class="party-counts">
-            {% for party_short_name, count in sorted_party_counts %}
-            {# party_short_name is already the short name from app.py context #}
-            <div class="party-block {{ party_short_name | lower | replace(' ', '-') | replace('&', 'and') }}">
-                {{ party_short_name }}: {{ count }}
+
+        <div id="statistics-content-wrapper" class="statscontent">
+            {# This is the area that will be replaced by HTMX #}
+            <h1>Statistics for {{ country_name }}</h1>
+            <div class="links">
+                {# Link to prayed list for the current country - this also needs to be dynamic or outside swap area if it depends on current country #}
+                <a href="{{ url_for('prayed_list', country_code=country_code) }}">View prayed for representatives for {{ country_name }}</a>
             </div>
-            {% endfor %}
-        </div>
-        <div class="statistics">
-            <canvas id="partyChart"></canvas>
+            <div class="country-switch-links">
+                Switch to:
+                <a href="{{ url_for('statistics_overall') }}"
+                   hx-get="{{ url_for('statistics_overall') }}"
+                   hx-target="#statistics-content-wrapper"
+                   hx-swap="innerHTML"
+                   hx-push-url="true">Overall Statistics</a>
+                {% for code, config in all_countries.items() %}
+                    {% if code != country_code %}
+                        <a href="{{ url_for('statistics', country_code=code) }}"
+                           hx-get="{{ url_for('statistics', country_code=code) }}"
+                           hx-target="#statistics-content-wrapper"
+                           hx-swap="innerHTML"
+                           hx-push-url="true">{{ config.name }} Statistics</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="statistics">
+                <canvas id="timeChart-{{ country_code }}"></canvas> {# Unique ID for canvas #}
+            </div>
+            <div class="party-counts">
+                {% for party_short_name, count in sorted_party_counts %}
+                <div class="party-block {{ party_short_name | lower | replace(' ', '-') | replace('&', 'and') }}">
+                    {{ party_short_name }}: {{ count }}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="statistics">
+                <canvas id="partyChart-{{ country_code }}"></canvas> {# Unique ID for canvas #}
+            </div>
+
+            <script>
+                // This script block will re-run each time this content is swapped in by HTMX.
+                (function() { // IIFE to scope variables
+                    const currentCountryCode = {{ country_code | tojson }};
+                    const currentCountryName = {{ country_name | tojson }};
+                    const partyInfoForCountry = {{ current_party_info | tojson }};
+                    const partyColors = {};
+
+                    for (const partyFullName in partyInfoForCountry) {
+                        if (partyInfoForCountry.hasOwnProperty(partyFullName)) {
+                            partyColors[partyInfoForCountry[partyFullName].short_name] = partyInfoForCountry[partyFullName].color;
+                        }
+                    }
+                    if (partyInfoForCountry['Other'] && !partyColors['Other']) {
+                         partyColors['Other'] = partyInfoForCountry['Other'].color;
+                    } else if (!partyColors['Other']) {
+                        partyColors['Other'] = '#CCCCCC';
+                    }
+
+                    // Destroy existing charts on these canvases if they exist, before creating new ones
+                    // This is important to prevent Chart.js errors/memory leaks when content is swapped.
+                    let existingTimeChart = Chart.getChart("timeChart-" + currentCountryCode);
+                    if (existingTimeChart) {
+                        existingTimeChart.destroy();
+                    }
+                    let existingPartyChart = Chart.getChart("partyChart-" + currentCountryCode);
+                    if (existingPartyChart) {
+                        existingPartyChart.destroy();
+                    }
+
+                    async function fetchStatisticsForChart() {
+                        if (currentCountryCode === 'overall') {
+                            const partyChartCanvas = document.getElementById('partyChart-' + currentCountryCode);
+                            if(partyChartCanvas) partyChartCanvas.style.display = 'none';
+
+                            const partyCountsDiv = document.querySelector('#statistics-content-wrapper .party-counts');
+                            if (partyCountsDiv) {
+                                partyCountsDiv.style.display = 'none';
+                            }
+                            return;
+                        }
+
+                        const response = await fetch(`/statistics/data/${currentCountryCode}`);
+                        const data = await response.json();
+                        const sortedKeys = Object.keys(data).sort((a, b) => data[b] - data[a]);
+                        const sortedData = sortedKeys.map(key => data[key]);
+
+                        const partyChartCanvas = document.getElementById('partyChart-' + currentCountryCode);
+                        if (!partyChartCanvas) return; // Canvas not found
+
+                        new Chart(partyChartCanvas.getContext('2d'), {
+                            type: 'bar',
+                            data: {
+                                labels: sortedKeys,
+                                datasets: [{
+                                    label: 'People Prayed For',
+                                    data: sortedData,
+                                    backgroundColor: sortedKeys.map(shortName => partyColors[shortName] || partyColors['Other'] || '#CCCCCC'),
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }}, plugins: { legend: { display: false }}}
+                        });
+                    }
+
+                    async function fetchTimeDataForChart() {
+                        const response = await fetch(`/statistics/timedata/${currentCountryCode}`);
+                        const data = await response.json();
+                        const timeChartCanvas = document.getElementById('timeChart-' + currentCountryCode);
+                        if (!timeChartCanvas) return; // Canvas not found
+
+                        const timeData = data.values.map((val, index) => {
+                            let shortPartyName = 'Other';
+                            for (const fullName in partyInfoForCountry) {
+                                if (fullName === val.party) {
+                                    shortPartyName = partyInfoForCountry[fullName].short_name;
+                                    break;
+                                }
+                            }
+                            if (val.party === 'Other' && !partyInfoForCountry[val.party]) {
+                                shortPartyName = 'Other';
+                            }
+                            return {
+                                x: new Date(data.timestamps[index]),
+                                y: index + 1,
+                                place: val.place,
+                                person: val.person,
+                                party: shortPartyName,
+                                country: val.country // For overall chart
+                            };
+                        });
+
+                        new Chart(timeChartCanvas.getContext('2d'), {
+                            type: 'line',
+                            data: {
+                                datasets: [{
+                                    label: 'Prayer Times',
+                                    data: timeData,
+                                    borderColor: '#4e73df',
+                                    backgroundColor: 'rgba(78, 115, 223, 0.05)',
+                                    pointBackgroundColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                                    pointBorderColor: currentCountryCode === 'overall' ? '#4e73df' : timeData.map(point => partyColors[point.party] || partyColors['Other'] || '#CCCCCC'),
+                                    fill: true,
+                                    tension: 0.4
+                                }]
+                            },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                scales: { x: { type: 'time', time: { unit: 'minute', tooltipFormat: 'PP HH:mm', displayFormats: { minute: 'HH:mm', hour: 'HH:mm' }}}, y: { beginAtZero: true }},
+                                plugins: {
+                                    tooltip: { callbacks: { label: function(tooltipItem) {
+                                        if (currentCountryCode === 'overall') {
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'} (${tooltipItem.raw.country || 'N/A'})`;
+                                        } else {
+                                            return `${tooltipItem.raw.person} - ${tooltipItem.raw.place || 'N/A'}`;
+                                        }
+                                    }}},
+                                    legend: { display: false }
+                                }
+                            }
+                        });
+                    }
+
+                    fetchStatisticsForChart();
+                    fetchTimeDataForChart();
+                })(); // End of IIFE
+            </script>
         </div>
     </div>
 </body>

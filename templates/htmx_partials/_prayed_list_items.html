@@ -1,0 +1,51 @@
+{% for item in prayed_for_list %}
+<div class="prayed-item" style="border-left: 5px solid {{ item.party_color if item.party_color else '#A9A9A9' }}; padding-left: 10px;">
+    <span>
+        <span class="highlight {{ item.party_class if item.party_class else 'party-other-overall' }}"
+              data-party-color="{{ item.party_color if item.party_color else '#A9A9A9' }}"
+              title="{{ item.party if item.party else 'N/A' }}">{{ item.person_name }}</span>
+        {% if item.post_label and item.post_label != "" %}
+            from {{ item.post_label }}
+        {% endif %}
+        {% if country_code == 'overall' and item.country_name_display %}
+            {# This condition might not be met if this partial is only for specific countries #}
+            ({{ item.country_name_display }})
+        {% endif %}
+        was prayed for {{ item.formatted_timestamp }}.
+    </span>
+    {% if country_code != 'overall' %}
+        <form hx-post="{{ url_for('put_back_in_queue') }}"
+              hx-target=".prayed-list"
+              hx-swap="innerHTML"
+              style="display: inline;">
+            <input type="hidden" name="person_name" value="{{ item.person_name }}">
+            <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
+            <input type="hidden" name="country_code" value="{{ country_code }}">
+            <button type="submit">Put Back in Queue</button>
+        </form>
+    {% endif %}
+</div>
+{% else %}
+<p>No items have been prayed for in {{ country_name }} yet.</p>
+{% endfor %}
+
+<script>
+    // Re-apply party affiliation visibility logic if needed, as this content is swapped.
+    // This assumes togglePartyAffiliation() and initial setup are still in the main prayed.html
+    // and might need to be called or state re-evaluated after HTMX swap.
+    // For simplicity, if the Show/Hide Party Affiliation button is outside the swapped area,
+    // its state might not visually re-apply to newly loaded items without extra JS.
+    // A more robust way would be to ensure the state (shown/hidden) is reapplied,
+    // perhaps by having the toggle function also set a class on a parent container.
+
+    // Example: If party affiliations were shown, re-apply styles to new items.
+    // This is a simplified example.
+    if (typeof togglePartyAffiliation === 'function' && typeof partyAffiliationVisible !== 'undefined' && partyAffiliationVisible) {
+        document.querySelectorAll('.prayed-list .highlight').forEach(span => {
+            if (span.style.backgroundColor === '' || span.style.backgroundColor === 'transparent') {
+                 // This logic might conflict if togglePartyAffiliation directly sets colors.
+                 // It's better if togglePartyAffiliation sets a class on a parent, and CSS handles visibility.
+            }
+        });
+    }
+</script>

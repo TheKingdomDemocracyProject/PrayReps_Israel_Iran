@@ -1,0 +1,38 @@
+{% if current %}
+    <div class="profile">
+        <div class="profile-image-container">
+            <img id="profileImage" src="{{ current.thumbnail }}" alt="Profile image of {{ current.person_name }}">
+        </div>
+        <div class="profile-text">
+            {% set country_name = all_countries[current.country_code].name if current.country_code and current.country_code in all_countries else 'Unknown Country' %}
+            {% if not current.post_label or current.post_label == 'N/A' or current.post_label.strip() == '' %}
+                Praying for <span id="personName">{{ current.person_name }}</span> who serves {{ country_name }}
+            {% else %}
+                Praying for <span id="personName">{{ current.person_name }}</span> from {{ country_name }} representing <span id="constituency">{{ current.post_label }}</span>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        // Update the global currentlyDisplayedItemID for the hx-vals on the button
+        // This script runs when this partial is swapped in.
+        currentlyDisplayedItemID = {{ current.id | default('null') }};
+        // Also manage button visibility based on whether there's a current item
+        const nextButton = document.getElementById('next-button');
+        if (nextButton) {
+            nextButton.style.display = 'block';
+        }
+        // Logic to update currently_displayed_map_country_code if needed,
+        // and potentially trigger a specific map refresh if the country changed.
+        // This might be complex if the map itself isn't directly part of this partial.
+        // For now, map refresh is handled by its own hx-get triggered by itemProcessed.
+    </script>
+{% else %}
+    All prayers complete or queue is empty. Stay tuned!
+    <script>
+        currentlyDisplayedItemID = null;
+        const nextButton = document.getElementById('next-button');
+        if (nextButton) {
+            nextButton.style.display = 'none';
+        }
+    </script>
+{% endif %}

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, redirect, url_for
+from flask import Flask, render_template, jsonify, request, redirect, url_for, make_response
 import pandas as pd
 # import requests # No longer needed as fetch_csv reads local files
 import sqlite3
@@ -1467,6 +1467,38 @@ def put_back_in_queue():
 
         # Redirect logic (should be outside the 'if updated_in_db' unless redirect depends on success)
         # Assuming redirect_target_country_code is defined earlier based on item_country_code_from_form
+
+    # HTMX response: render the partial with the updated list for that country
+    if updated_in_db and item_country_code_from_form and item_country_code_from_form in COUNTRIES_CONFIG:
+        # Data for the list has already been reloaded into prayed_for_data by reload_single_country_prayed_data_from_db
+        # We need to re-prepare it for display similar to how prayed_list route does
+        current_country_party_info = party_info.get(item_country_code_from_form, {})
+        other_party_default = {'short_name': 'Other', 'color': '#CCCCCC'}
+
+        updated_prayed_items_display = []
+        for item_original in prayed_for_data[item_country_code_from_form]:
+            item = item_original.copy()
+            item['formatted_timestamp'] = format_pretty_timestamp(item.get('timestamp'))
+            party_name_from_log = item.get('party', 'Other')
+            party_data = current_country_party_info.get(party_name_from_log,
+                                                      current_country_party_info.get('Other', other_party_default))
+            item['party_class'] = party_data['short_name'].lower().replace(' ', '-').replace('&', 'and')
+            item['party_color'] = party_data['color']
+            if 'country_code' not in item: # Should already be there
+                 item['country_code'] = item_country_code_from_form
+            updated_prayed_items_display.append(item)
+
+        # Also trigger a global event for other parts of the app (like main page map/queue info if they are visible)
+        # This is useful if putting someone back affects the main page's state.
+        response = make_response(render_template('htmx_partials/_prayed_list_items.html',
+                                prayed_for_list=updated_prayed_items_display,
+                                country_code=item_country_code_from_form, # for the form inside the partial
+                                country_name=COUNTRIES_CONFIG[item_country_code_from_form]['name'],
+                                all_countries=COUNTRIES_CONFIG)) # Pass all_countries if partial needs it
+        response.headers['HX-Trigger'] = 'itemProcessed' # Use the same event as marking prayed, to refresh general UI elements
+        return response
+
+    # Fallback redirect if not an HTMX update or something went wrong before HTMX part
     if redirect_target_country_code and redirect_target_country_code in COUNTRIES_CONFIG:
         return redirect(url_for('prayed_list', country_code=redirect_target_country_code))
     else:
@@ -1493,3 +1525,163 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print('You pressed Ctrl+C! Exiting gracefully...')
         sys.exit(0)
+
+# HTMX Endpoints
+
+@app.route('/htmx/current_item_display')
+def htmx_get_current_item_display():
+    # Simplified logic for fetching current item for display
+    current_queue_items = get_current_queue_items_from_db()
+    current_item_display = current_queue_items[0] if current_queue_items else None
+
+    # Determine map country for initial load or if current item dictates it
+    map_to_display_country_code = list(COUNTRIES_CONFIG.keys())[0] # Default
+    if current_item_display:
+        map_to_display_country_code = current_item_display.get('country_code', map_to_display_country_code)
+
+    # Ensure map is generated for the correct country IF the item's country is different from last known
+    # This logic might need refinement based on how currently_displayed_map_country_code is tracked globally or per session
+    # For now, assume map generation happens if current_item_display dictates a country
+    if current_item_display:
+        item_country_code = current_item_display['country_code']
+        # Potentially trigger map generation if item_country_code is different from a stored 'last_map_country'
+        # This is a simplified version; full map switching logic might be more complex
+        hex_map_gdf = HEX_MAP_DATA_STORE.get(item_country_code)
+        post_label_df = POST_LABEL_MAPPINGS_STORE.get(item_country_code)
+        if hex_map_gdf is not None and not hex_map_gdf.empty: # post_label_df can be None/empty
+            # It's important that prayed_for_data is up-to-date here
+            # load_prayed_for_data_from_db() # Might be too slow for every request
+            # reload_single_country_prayed_data_from_db(item_country_code) # More targeted
+            # For now, assume prayed_for_data is reasonably fresh or updated by other means
+            plot_hex_map_with_hearts(
+                hex_map_gdf,
+                post_label_df,
+                prayed_for_data.get(item_country_code, []),
+                current_queue_items, # Pass full queue for highlighting logic
+                item_country_code
+            )
+        else:
+            logging.warning(f"[htmx_get_current_item_display] Map data missing for {item_country_code}, map not plotted/updated.")
+
+    return render_template('htmx_partials/_current_item_display.html',
+                           current=current_item_display,
+                           all_countries=COUNTRIES_CONFIG)
+
+@app.route('/htmx/queue_info')
+def htmx_get_queue_info():
+    load_prayed_for_data_from_db() # Ensure prayed_for_data is fresh to calculate remaining accurately
+    total_all_countries = sum(cfg['total_representatives'] for cfg in COUNTRIES_CONFIG.values())
+    total_prayed_for_all_countries = sum(len(prayed_for_data[country]) for country in COUNTRIES_CONFIG.keys())
+    current_remaining = total_all_countries - total_prayed_for_all_countries
+
+    current_queue_items = get_current_queue_items_from_db()
+    queue_length = len(current_queue_items)
+
+    return render_template('htmx_partials/_queue_info.html',
+                           remaining=current_remaining,
+                           queue_length=queue_length)
+
+@app.route('/htmx/hex_map_content')
+def htmx_get_hex_map_content():
+    # Determine which country's map to display.
+    # This could come from a query param, session, or the current item in queue.
+    # For simplicity, let's assume it tries to match the current item or a default.
+    current_queue_items = get_current_queue_items_from_db()
+    current_item_display = current_queue_items[0] if current_queue_items else None
+    map_country_code = list(COUNTRIES_CONFIG.keys())[0] # Default
+    if current_item_display:
+        map_country_code = current_item_display.get('country_code', map_country_code)
+
+    # The map should have been generated by either the initial load or by processing an item.
+    # This endpoint just serves the path to the (presumably) already generated map.
+    # It might be necessary to ensure the map for map_country_code is the one most recently generated.
+    # A timestamp query parameter is good for cache busting.
+    map_image_url = url_for('static', filename='hex_map.png') + f"?v={time.time()}"
+    return render_template('htmx_partials/_hex_map_content.html', map_image_url=map_image_url)
+
+@app.route('/process_item_htmx', methods=['POST'])
+def process_item_htmx():
+    # This is similar to the original process_item
+    conn = None
+    item_processed_successfully = False
+    processed_item_country_code = None # To know which map to potentially regenerate/update
+
+    item_id_to_process_str = request.form.get('item_id')
+    if not item_id_to_process_str:
+        logging.error("/process_item_htmx: Missing 'item_id'.")
+        return "Missing item_id", 400
+    try:
+        item_id_to_process = int(item_id_to_process_str)
+    except ValueError:
+        logging.error(f"/process_item_htmx: Invalid 'item_id': {item_id_to_process_str}.")
+        return "Invalid item_id", 400
+
+    try:
+        conn = sqlite3.connect(DATABASE_URL)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM prayer_candidates WHERE id = ? AND status = 'queued'", (item_id_to_process,))
+        item_to_process = cursor.fetchone()
+
+        if item_to_process:
+            processed_item_country_code = item_to_process['country_code']
+            new_status_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("""
+                UPDATE prayer_candidates SET status = 'prayed', status_timestamp = ?
+                WHERE id = ? AND status = 'queued'
+            """, (new_status_timestamp, item_id_to_process))
+
+            if cursor.rowcount > 0:
+                conn.commit()
+                item_processed_successfully = True
+                logging.info(f"[process_item_htmx] Item ID={item_id_to_process} marked as 'prayed'.")
+
+                # Reload prayed data for the specific country for subsequent map generation
+                reload_single_country_prayed_data_from_db(processed_item_country_code)
+
+                # Regenerate map for the country of the processed item
+                # This ensures the map reflects the change if it's displayed next
+                hex_map_gdf = HEX_MAP_DATA_STORE.get(processed_item_country_code)
+                post_label_df = POST_LABEL_MAPPINGS_STORE.get(processed_item_country_code)
+                current_queue_for_map_gen = get_current_queue_items_from_db() # Get fresh queue
+
+                if hex_map_gdf is not None and not hex_map_gdf.empty:
+                    plot_hex_map_with_hearts(
+                        hex_map_gdf,
+                        post_label_df,
+                        prayed_for_data[processed_item_country_code], # Freshly reloaded
+                        current_queue_for_map_gen,
+                        processed_item_country_code
+                    )
+                    logging.info(f"[process_item_htmx] Map for {processed_item_country_code} regenerated after item processing.")
+                else:
+                    logging.warning(f"[process_item_htmx] Could not regenerate map for {processed_item_country_code}, map data missing.")
+            else:
+                conn.rollback()
+                logging.warning(f"[process_item_htmx] Item ID={item_id_to_process} not updated (not found or status changed).")
+        else:
+            logging.warning(f"[process_item_htmx] Item ID={item_id_to_process} not found or not 'queued'.")
+
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error in /process_item_htmx for ID={item_id_to_process}: {e}", exc_info=True)
+        if conn: conn.rollback()
+    except Exception as e:
+        logging.error(f"Unexpected error in /process_item_htmx for ID={item_id_to_process}: {e}", exc_info=True)
+        if conn: conn.rollback()
+    finally:
+        if conn: conn.close()
+
+    if item_processed_successfully:
+        # Send an event to trigger updates on the page
+        response = make_response("", 204) # No content
+        response.headers['HX-Trigger'] = 'itemProcessed'
+        return response
+    else:
+        # Potentially return an error message or a specific status if processing failed
+        # For now, let's also trigger itemProcessed so UI can refresh and show the (possibly unchanged) state
+        response = make_response("", 204)
+        response.headers['HX-Trigger'] = 'itemProcessed' # Trigger even on failure to refresh UI state
+        logging.warning(f"/process_item_htmx call for ID {item_id_to_process_str} did not result in item_processed_successfully=true, but still triggering UI refresh.")
+        return response
+        # A more advanced error handling could return an HX-Retarget to an error div.
+        # return "Failed to process item.", 500 # Or a more specific error
