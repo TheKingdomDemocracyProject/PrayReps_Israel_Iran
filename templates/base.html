@@ -25,7 +25,7 @@
                 <li><a href="{{ url_for('queue_page') }}">Queue</a></li>
                 <li><a href="{{ url_for('prayed_list') }}">Prayed List</a></li>
                 <li><a href="{{ url_for('statistics') }}">Statistics</a></li>
-                <li><a href="{{ url_for('home') }}">About</a></li> {# Pointing 'About' to home for now #}
+                <li><a href="{{ url_for('about_page') }}">About</a></li>
             </ul>
         </nav>
     </header>
@@ -38,7 +38,7 @@
     <footer>
         <p>&copy; {{ now.year }} PrayReps Project.
             Inspired by the <a href="https://kingdomdemocracy.global/" target="_blank" rel="noopener noreferrer">Kingdom Democracy Project</a>.
-             | <a href="{{ url_for('home') }}">About PrayReps</a> {# Pointing 'About' to home for now #}
+             | <a href="{{ url_for('about_page') }}">About PrayReps</a>
         </p>
     </footer>
 
