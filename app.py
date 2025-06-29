@@ -683,6 +683,15 @@ def update_queue():
                 logging.debug("SQLite connection closed in update_queue.")
         # The while True loop and time.sleep(90) are removed.
 
+@app.route('/about')
+def about_page():
+    """Renders the about page."""
+    logging.info("Serving about page from app.py")
+    # This mirrors the about_page from project/blueprints/main.py
+    # Ensure templates/about.html exists and is appropriate.
+    now = datetime.now()
+    return render_template('about.html', now=now)
+
 def load_prayed_for_data_from_db():
     """Loads all prayed-for items from the SQLite database into the global prayed_for_data."""
     global prayed_for_data
