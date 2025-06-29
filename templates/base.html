@@ -13,14 +13,14 @@
 <body>
     <header>
         <div class="header-content">
-            <a href="{{ url_for('main.home') }}"> {# Reverted to main.home #}
+            <a href="{{ url_for('home') }}"> {# Corrected to 'home' #}
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="PrayReps Logo" class="logo">
             </a>
             <h1>{% block page_title %}Praying for Representatives{% endblock %}</h1>
         </div>
         <nav>
             <ul>
-                <li><a href="{{ url_for('main.home') }}">Home</a></li> {# Reverted to main.home #}
+                <li><a href="{{ url_for('home') }}">Home</a></li> {# Corrected to 'home' #}
                 <li><a href="{{ url_for('prayer.queue_page_html') }}">Queue</a></li>
                 <li><a href="{{ url_for('prayer.prayed_list_default_redirect') }}">Prayed List</a></li>
                 <li><a href="{{ url_for('stats.statistics_default_redirect') }}">Statistics</a></li>
