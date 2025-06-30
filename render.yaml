@@ -8,12 +8,7 @@ services:
     disks:
       - name: data-disk
         mountPath: /mnt/data
-
+        sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.10.0"
-
-# Define the disk as a top-level resource
-disks:
-  - name: data-disk
-    sizeGB: 1
