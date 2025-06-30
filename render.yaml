@@ -2,13 +2,18 @@ services:
   - type: web
     name: python-flask-app
     env: python
-    plan: free # optional; defaults to starter
+    plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn --workers 1 app:app"
-    disk: # Using singular 'disk' directly in the service definition
-      name: data-disk # Name for the disk resource
-      mountPath: /mnt/data # Where to mount it
-      sizeGB: 1 # Define size here as well
+    disks:
+      - name: data-disk
+        mountPath: /mnt/data
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.10.0"
+
+# Define the disk as a top-level resource
+disks:
+  - name: data-disk
+    sizeGB: 1
