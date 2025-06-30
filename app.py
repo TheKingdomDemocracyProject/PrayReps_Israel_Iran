@@ -18,30 +18,44 @@ from hex_map import load_hex_map, load_post_label_mapping, plot_hex_map_with_hea
 from utils import format_pretty_timestamp
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(APP_ROOT, 'data')
-LOG_DIR = os.path.join(DATA_DIR, 'logs')
-DATABASE_URL = os.path.join(DATA_DIR, 'queue.db')
-os.makedirs(LOG_DIR, exist_ok=True) # Create log directory immediately
-os.makedirs(DATA_DIR, exist_ok=True) # Ensure data directory exists for DB
+# Path for CSVs and other app-bundled data files (remains relative to app)
+APP_DATA_DIR = os.path.join(APP_ROOT, 'data')
+
+# Paths for persistent storage on Render disk mount
+PERSISTENT_MOUNT_PATH = '/mnt/data'
+PERSISTENT_DB_DIR = os.path.join(PERSISTENT_MOUNT_PATH, 'database') # Directory for the DB
+PERSISTENT_LOG_DIR = os.path.join(PERSISTENT_MOUNT_PATH, 'logs')    # Directory for logs
+
+DATABASE_URL = os.path.join(PERSISTENT_DB_DIR, 'queue.db')
+
+# Create persistent directories if they don't exist
+os.makedirs(PERSISTENT_DB_DIR, exist_ok=True)
+os.makedirs(PERSISTENT_LOG_DIR, exist_ok=True)
 
 # Configure logging
+LOG_FILE_PATH = os.path.join(PERSISTENT_LOG_DIR, "app.log")
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
-    logging.FileHandler(os.path.join(LOG_DIR, "app.log")),
+    logging.FileHandler(LOG_FILE_PATH),
     logging.StreamHandler()
 ])
 
-# Log path initializations (optional but good for debugging)
+# Log path initializations
 logging.info(f"APP_ROOT set to: {APP_ROOT}")
-logging.info(f"LOG_DIR set to: {LOG_DIR} (created if didn't exist).")
+logging.info(f"APP_DATA_DIR (for CSVs, etc.) set to: {APP_DATA_DIR}")
+logging.info(f"PERSISTENT_DB_DIR set to: {PERSISTENT_DB_DIR} (created if didn't exist).")
+logging.info(f"PERSISTENT_LOG_DIR set to: {PERSISTENT_LOG_DIR} (created if didn't exist).")
+logging.info(f"DATABASE_URL set to: {DATABASE_URL}")
+logging.info(f"LOG_FILE_PATH set to: {LOG_FILE_PATH}")
 
 app = Flask(__name__)
 
 # Configuration
+# CSV and GeoJSON paths should use APP_DATA_DIR as they are part of the deployed application files
 COUNTRIES_CONFIG = {
     'israel': {
-        'csv_path': os.path.join(APP_ROOT, 'data/20221101_israel.csv'),
-        'geojson_path': os.path.join(APP_ROOT, 'data/ISR_Parliament_120.geojson'),
-        'map_shape_path': os.path.join(APP_ROOT, 'data/ISR_Parliament_120.geojson'),
+        'csv_path': os.path.join(APP_DATA_DIR, '20221101_israel.csv'),
+        'geojson_path': os.path.join(APP_DATA_DIR, 'ISR_Parliament_120.geojson'),
+        'map_shape_path': os.path.join(APP_DATA_DIR, 'ISR_Parliament_120.geojson'),
         'post_label_mapping_path': None,
         'total_representatives': 120,
         # 'log_file': os.path.join(LOG_DIR, 'prayed_for_israel.json'), # Removed
@@ -49,12 +63,12 @@ COUNTRIES_CONFIG = {
         'flag': '🇮🇱'
     },
     'iran': {
-        'csv_path': os.path.join(APP_ROOT, 'data/20240510_iran.csv'),
-        'geojson_path': os.path.join(APP_ROOT, 'data/IRN_IslamicParliamentofIran_290_v2.geojson'),
-        'map_shape_path': os.path.join(APP_ROOT, 'data/IRN_IslamicParliamentofIran_290_v2.geojson'),
+        'csv_path': os.path.join(APP_DATA_DIR, '20240510_iran.csv'),
+        'geojson_path': os.path.join(APP_DATA_DIR, 'IRN_IslamicParliamentofIran_290_v2.geojson'),
+        'map_shape_path': os.path.join(APP_DATA_DIR, 'IRN_IslamicParliamentofIran_290_v2.geojson'),
         'post_label_mapping_path': None,
         'total_representatives': 290,
-        # 'log_file': os.path.join(LOG_DIR, 'prayed_for_iran.json'), # Removed
+        # 'log_file': os.path.join(PERSISTENT_LOG_DIR, 'prayed_for_iran.json'), # Example if logs were per country & persistent
         'name': 'Iran',
         'flag': '🇮🇷'
     }
