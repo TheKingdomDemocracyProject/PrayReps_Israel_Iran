@@ -167,6 +167,94 @@ def queue_page_html():
     items = prayer_service.get_queued_representatives()
     return render_template('queue.html', queue=items)
 
+# Non-HTMX version of process_item, similar to original app.py version
+@bp.route('/process_item_form', methods=['POST'])
+def process_item_form():
+    item_id_str = request.form.get('item_id')
+    current_app.logger.info(f"Form request to process item ID: {item_id_str}")
+
+    if not item_id_str:
+        current_app.logger.error("Missing item_id in form request to process_item.")
+        # Handle error appropriately, e.g., flash message and redirect
+        return redirect(url_for('main.home'))
+    try:
+        item_id_to_process = int(item_id_str)
+    except ValueError:
+        current_app.logger.error(f"Invalid item_id format in form: {item_id_str}")
+        return redirect(url_for('main.home'))
+
+    processed_item_details, rows_affected = prayer_service.mark_representative_as_prayed(item_id_to_process)
+
+    if processed_item_details and rows_affected > 0:
+        current_app.logger.info(f"Successfully processed item ID {item_id_to_process} via form.")
+        country_code = processed_item_details['country_code']
+        # Regenerate map for the affected country
+        prayed_for_map_country = prayer_service.get_prayed_representatives(country_code=country_code)
+        current_queue_items_for_map = prayer_service.get_queued_representatives()
+        map_service.generate_country_map_image(country_code, prayed_for_map_country, current_queue_items_for_map)
+    else:
+        current_app.logger.warning(f"Failed to process item ID {item_id_str} via form or item not found/already processed.")
+
+    return redirect(url_for('main.home')) # Redirect to home or queue page
+
+# Non-HTMX version of put_back_in_queue
+@bp.route('/put_back_form', methods=['POST'])
+def put_back_form():
+    person_name = request.form.get('person_name')
+    post_label_form = request.form.get('post_label') # This is how it was in app.py
+    country_code_form = request.form.get('country_code')
+
+    current_app.logger.info(f"Form request to put back item: Name='{person_name}', PostLabel='{post_label_form}', Country='{country_code_form}'")
+
+    if not all([person_name, country_code_form]): # post_label can be None/empty
+        current_app.logger.error("Missing required fields (person_name, country_code) for put_back_form.")
+        return redirect(url_for('prayer.prayed_list_default_redirect')) # Or appropriate error page/flash
+
+    # Logic to find candidate_id based on name, post_label, country_code
+    # This requires querying the DB. prayer_service could have a helper for this.
+    # For now, let's assume prayer_service.find_prayed_candidate_id_for_put_back exists or add it.
+    # Simplified: direct DB access here or extend prayer_service
+    from ..database import get_db # Temporary direct DB access if service not ready
+    db = get_db()
+    query_post_label_value_for_db = post_label_form
+    is_post_label_null_in_db_query = False
+    if post_label_form is None or not post_label_form.strip():
+        is_post_label_null_in_db_query = True
+
+    sql_find = "SELECT id FROM prayer_candidates WHERE person_name = %s AND country_code = %s AND status = 'prayed'"
+    params_find = [person_name, country_code_form]
+    if is_post_label_null_in_db_query:
+        sql_find += " AND post_label IS NULL"
+    else:
+        sql_find += " AND post_label = %s"
+        params_find.append(query_post_label_value_for_db)
+
+    found_item = db.execute(sql_find, tuple(params_find)).fetchone()
+
+    if not found_item:
+        current_app.logger.warning(f"Item not found for put_back_form: Name='{person_name}', PostLabel='{post_label_form}', Country='{country_code_form}'")
+        return redirect(url_for('prayer.prayed_list_page_html', country_code=country_code_form))
+
+    candidate_id = found_item['id']
+    new_hex_id_to_assign = None
+    if country_code_form in ['israel', 'iran']: # Hex ID logic
+         with current_app.app_context(): # Ensure context for service call if it uses current_app
+            new_hex_id_to_assign = prayer_service.get_available_hex_id_for_country(country_code_form, exclude_candidate_id=candidate_id)
+
+    rows_affected = prayer_service.put_representative_back_in_queue(candidate_id, new_hex_id=new_hex_id_to_assign)
+
+    if rows_affected > 0:
+        current_app.logger.info(f"Successfully put item ID {candidate_id} back in queue via form.")
+        # Regenerate map
+        prayed_list_updated = prayer_service.get_prayed_representatives(country_code=country_code_form)
+        current_queue_items = prayer_service.get_queued_representatives()
+        map_service.generate_country_map_image(country_code_form, prayed_list_updated, current_queue_items)
+    else:
+        current_app.logger.warning(f"Failed to put item ID {candidate_id} back in queue via form.")
+
+    return redirect(url_for('prayer.prayed_list_page_html', country_code=country_code_form))
+
+
 @bp.route('/prayed_list_page/<country_code>')
 def prayed_list_page_html(country_code):
     if country_code == 'overall':

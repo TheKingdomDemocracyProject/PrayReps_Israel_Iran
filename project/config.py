@@ -9,8 +9,19 @@ class Config:
     APP_ROOT = os.path.dirname(os.path.abspath(__file__))
     PROJECT_ROOT = os.path.dirname(APP_ROOT)
 
-    DATABASE_URL = os.path.join(PROJECT_ROOT, 'data', 'queue.db')
-    LOG_DIR = os.path.join(PROJECT_ROOT, 'data', 'logs')
+    # DATABASE_URL for PostgreSQL on Render, with a fallback to local SQLite path for development if not set
+    # The primary source of DATABASE_URL for database functions is os.environ.get('DATABASE_URL') in app.py
+    # This ensures app.config['DATABASE_URL'] is also correctly set.
+    DATABASE_URL = os.environ.get('DATABASE_URL') or \
+                   os.path.join(PROJECT_ROOT, 'data', 'local_dev_queue.sqlite') # Fallback for local dev
+
+    # LOG_DIR should also be environment-aware or use a simpler default for non-Render environments
+    # For Render, stdout/stderr is preferred. For local, a local path.
+    # The logging in create_app already uses app.config['LOG_DIR']
+    # If app.py's LOG_DIR_APP is the main one for file logging, ensure consistency or remove one.
+    # For file logging, use a consistent local path. Render will capture stdout/stderr.
+    LOG_DIR = os.path.join(PROJECT_ROOT, 'logs_project_cfg') # For logs configured by create_app
+
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data') # For CSVs, GeoJSONs
 
     # Static and Template folders are relative to PROJECT_ROOT

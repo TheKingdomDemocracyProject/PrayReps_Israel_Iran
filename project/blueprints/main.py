@@ -20,7 +20,44 @@ from ..utils import format_pretty_timestamp
 #              current_app.logger.error("Critical: format_pretty_timestamp could not be imported for main blueprint.")
 # --- End Import Helper ---
 
+from hex_map import plot_hex_map_with_hearts # For the new route
+# from ...app import HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE, prayed_for_data, get_current_queue_items_from_db # Removed incorrect import
+
+
 bp = Blueprint('main', __name__)
+
+@bp.route('/generate_map_direct/<country_code>')
+def generate_map_for_country_direct(country_code):
+    current_app.logger.debug(f"[main.bp] Direct map generation for country: {country_code}")
+    if country_code not in current_app.config['COUNTRIES_CONFIG']:
+        current_app.logger.error(f"Invalid country code '{country_code}' for direct map generation.")
+        return jsonify(error='Invalid country code'), 404
+
+    # Access data stores from current_app, populated by data_initializer
+    hex_map_gdf = current_app.hex_map_data_store.get(country_code)
+    post_label_df = current_app.post_label_mappings_store.get(country_code)
+
+    # Use prayer_service to get prayed and queued items
+    prayed_list_for_map = prayer_service.get_prayed_representatives(country_code=country_code)
+    current_queue_for_map = prayer_service.get_queued_representatives()
+
+    if hex_map_gdf is None or hex_map_gdf.empty:
+        current_app.logger.error(f"Map data (GeoDataFrame) not available for {country_code} in direct generation.")
+        return jsonify(error=f'Map data not available for {country_code}'), 500
+
+    # plot_hex_map_with_hearts is imported from hex_map.py
+    # It saves the map to static/hex_map.png (this path is hardcoded in plot_hex_map_with_hearts)
+    plot_hex_map_with_hearts(
+        hex_map_gdf,
+        post_label_df, # This can be None or empty for random allocation
+        prayed_list_for_map,
+        current_queue_for_map,
+        country_code
+    )
+    # This endpoint doesn't return the map path, just confirms generation.
+    # The client would then fetch the known static/hex_map.png path.
+    return jsonify(status=f'Map directly generated for {country_code} at static/hex_map.png'), 200
+
 
 @bp.route('/', endpoint='home') # Explicitly name the endpoint
 def home():

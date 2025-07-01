@@ -56,7 +56,7 @@ logging.info(f"APP_DATA_DIR (for CSVs, etc.) set to: {APP_DATA_DIR}")
 logging.info(f"DATABASE_URL (from env): {'********' if DATABASE_URL else 'NOT SET'}") # Avoid logging full URL
 logging.info(f"LOG_FILE_PATH_APP set to: {LOG_FILE_PATH_APP}")
 
-app = Flask(__name__)
+# app = Flask(__name__) # Removed: App will be created by factory in project/__init__.py
 
 # Configuration
 # CSV and GeoJSON paths should use APP_DATA_DIR as they are part of the deployed application files
@@ -184,82 +184,10 @@ def init_db():
 # Old migration functions (migrate_to_single_table_schema, migrate_json_logs_to_db)
 # are removed as they were SQLite specific and are not needed for the new PostgreSQL setup.
 
-def initialize_app_data():
-    # The content from the existing `if __name__ == '__main__':` block's loop
-    # and the thread starting line will go here.
-    if DATABASE_URL: # Only attempt DB operations if DATABASE_URL is set
-        init_db() # Initialize PostgreSQL database
-        # Old migrations (migrate_to_single_table_schema, migrate_json_logs_to_db) are removed.
-        load_prayed_for_data_from_db() # Load all prayed for data from DB into memory
-    else:
-        logging.error("Skipping database initialization and data loading as DATABASE_URL is not set.")
-
-    logging.debug("Starting application data initialization (static data like CSVs)...")
-
-    # Loop for deputies_data, HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE initialization
-    for country_code_init in COUNTRIES_CONFIG.keys():
-        logging.debug(f"Initializing non-log data for country: {country_code_init}") # Changed from INFO to DEBUG
-        logging.debug(f"Using CSV path: {COUNTRIES_CONFIG[country_code_init]['csv_path']}") # Changed from INFO to DEBUG
-        logging.debug(f"Using GeoJSON path: {COUNTRIES_CONFIG[country_code_init]['geojson_path']}") # Changed from INFO to DEBUG
-        # The specific log line for 'log_file' path has been removed.
-
-        # Fetch and process CSV data for deputies
-        df_init = fetch_csv(country_code_init)
-        if not df_init.empty:
-            process_deputies(df_init, country_code_init) # process_deputies logs
-            logging.debug(f"Processed deputies for {country_code_init}: {len(deputies_data[country_code_init]['with_images'])} with images, {len(deputies_data[country_code_init]['without_images'])} without.") # Changed from INFO to DEBUG
-        else:
-            logging.warning(f"CSV data for {country_code_init} was empty. No deputies processed.")
-
-        # Load map shape data
-        map_path = COUNTRIES_CONFIG[country_code_init]['map_shape_path']
-        if os.path.exists(map_path):
-            if country_code_init in ['israel', 'iran']:
-                logging.debug(f"Attempting to load hex map for specific country: {country_code_init} from {map_path}") # Changed from INFO to DEBUG
-
-            HEX_MAP_DATA_STORE[country_code_init] = load_hex_map(map_path)
-
-            if country_code_init in ['israel', 'iran']:
-                if HEX_MAP_DATA_STORE[country_code_init] is None:
-                    logging.error(f"Critical Failure: Map data loading returned None for {country_code_init}.")
-                elif HEX_MAP_DATA_STORE[country_code_init].empty:
-                    logging.warning(f"Warning: Loaded map data for {country_code_init} is an empty GeoDataFrame.")
-                else:
-                    logging.info(f"Success: Loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
-            else: # Fallback to generic logging for other countries
-                if HEX_MAP_DATA_STORE[country_code_init] is not None and not HEX_MAP_DATA_STORE[country_code_init].empty:
-                    logging.info(f"Successfully loaded hex map for {country_code_init} with {len(HEX_MAP_DATA_STORE[country_code_init])} features.")
-                elif HEX_MAP_DATA_STORE[country_code_init] is not None and HEX_MAP_DATA_STORE[country_code_init].empty:
-                    logging.warning(f"Loaded hex map for {country_code_init} is empty.")
-                else:
-                    logging.error(f"Failed to load hex map for {country_code_init} (it's None).")
-        else:
-            logging.error(f"Map file not found: {map_path} for country {country_code_init}")
-            HEX_MAP_DATA_STORE[country_code_init] = None
-
-        # Load post label mapping data
-        post_label_path = COUNTRIES_CONFIG[country_code_init].get('post_label_mapping_path')
-        if post_label_path and os.path.exists(post_label_path):
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = load_post_label_mapping(post_label_path)
-        elif post_label_path:
-            logging.error(f"Post label mapping file not found: {post_label_path} for country {country_code_init}")
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame()
-        else: # No path specified (e.g., for Israel, Iran)
-            logging.debug(f"No post label mapping file specified for country {country_code_init}. Assigning empty DataFrame.") # Changed from INFO to DEBUG
-            POST_LABEL_MAPPINGS_STORE[country_code_init] = pd.DataFrame() # Ensure empty DataFrame is assigned
-
-        # Logging for post_label_mapping results
-        if POST_LABEL_MAPPINGS_STORE.get(country_code_init) is not None and not POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
-            logging.info(f"Successfully loaded post label mapping for {country_code_init} with {len(POST_LABEL_MAPPINGS_STORE[country_code_init])} entries.")
-        elif POST_LABEL_MAPPINGS_STORE.get(country_code_init) is not None and POST_LABEL_MAPPINGS_STORE[country_code_init].empty:
-            logging.warning(f"Loaded post label mapping for {country_code_init} is empty (this may be normal).")
-        # No else needed as it's initialized to empty DataFrame
-
-    logging.debug("Application data initialization complete.") # Changed from INFO to DEBUG
-
-    # Start the queue updating thread
-    # logging.info("Starting the update_queue background thread.") # Kept as INFO
-    # threading.Thread(target=update_queue, daemon=True).start()
+# initialize_app_data() function definition removed.
+# Its logic is now orchestrated by project/data_initializer.py:initialize_application(),
+# which calls utility functions (init_db, load_prayed_for_data_from_db, update_queue, etc.)
+# still residing in this file (app.py), and also populates static data stores.
 
 def migrate_json_logs_to_db():
     """Migrates data from old JSON log files to the prayed_items SQLite table if the table is empty."""
@@ -413,10 +341,12 @@ def process_deputies(csv_data, country_code):
 
 # Function to periodically update the queue
 def update_queue():
-    with app.app_context():
-        logging.info("Update_queue function execution started.")
-        conn = None
-        if not DATABASE_URL:
+    # Removed 'with app.app_context():' as this function will be called
+    # from initialize_app_data, which is itself called within an app context
+    # established by create_app.
+    logging.info("Update_queue function execution started.")
+    conn = None
+    if not DATABASE_URL:
             logging.error("[update_queue] DATABASE_URL not set. Aborting queue update.")
             return
         try:
@@ -571,14 +501,14 @@ def update_queue():
                 logging.debug("PostgreSQL connection closed in update_queue.")
         # The while True loop and time.sleep(90) are removed.
 
-@app.route('/about')
-def about_page():
-    """Renders the about page."""
-    logging.info("Serving about page from app.py")
-    # This mirrors the about_page from project/blueprints/main.py
-    # Ensure templates/about.html exists and is appropriate.
-    now = datetime.now()
-    return render_template('about.html', now=now)
+# All routes previously in app.py are now moved to their respective blueprints
+# within the 'project/blueprints/' directory.
+# The Flask 'app' instance is created by the factory in 'project/__init__.py',
+# and blueprints are registered there.
+
+# Utility functions like load_prayed_for_data_from_db, get_current_queue_items_from_db, etc.,
+# remain in this file to be imported by blueprints or services if needed directly,
+# though ideally, they would also be part of a service layer. For now, they stay here.
 
 def load_prayed_for_data_from_db():
     """Loads all prayed-for items from the PostgreSQL database into the global prayed_for_data."""
@@ -1351,9 +1281,9 @@ def put_back_in_queue():
             return redirect(url_for('home')) # Absolute fallback
 
 # Synchronously initialize application data when the module is loaded
-logging.info("Starting synchronous application data initialization at module load...")
-initialize_app_data() # This will block until complete. Its last step starts the update_queue daemon.
-logging.info("Synchronous application data initialization finished at module load.")
+# logging.info("Starting synchronous application data initialization at module load...")
+# initialize_app_data() # Removed: This will be called by the app factory
+# logging.info("Synchronous application data initialization finished at module load.")
 
 if __name__ == '__main__':
     # This block is mainly for local Flask development server
