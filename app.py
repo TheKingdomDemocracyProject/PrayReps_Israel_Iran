@@ -1,17 +1,16 @@
 from flask import Flask, render_template, jsonify, request, redirect, url_for
 import pandas as pd
-# import requests # No longer needed as fetch_csv reads local files
-import sqlite3
+import psycopg2 # For PostgreSQL
+from psycopg2.extras import DictCursor # To fetch rows as dictionaries
 import threading
 import time
-import queue as Queue
+# import queue as Queue # Removed as unused
 import logging
 from datetime import datetime
 import json
 import sys
-# from io import StringIO # No longer needed as fetch_csv reads local files
 import numpy as np
-import os
+import os # Already imported, but ensure it's used for os.environ.get
 import random
 
 from hex_map import load_hex_map, load_post_label_mapping, plot_hex_map_with_hearts
@@ -21,31 +20,41 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 # Path for CSVs and other app-bundled data files (remains relative to app)
 APP_DATA_DIR = os.path.join(APP_ROOT, 'data')
 
-# Paths for persistent storage on Render disk mount
-PERSISTENT_MOUNT_PATH = '/mnt/data'
-PERSISTENT_DB_DIR = os.path.join(PERSISTENT_MOUNT_PATH, 'database') # Directory for the DB
-PERSISTENT_LOG_DIR = os.path.join(PERSISTENT_MOUNT_PATH, 'logs')    # Directory for logs
+# DATABASE_URL will be fetched from environment variables, set by Render
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    logging.error("CRITICAL: DATABASE_URL environment variable not set.")
+    # Fallback for local development if needed, but not for production
+    # For local dev, you might set this env var or use a local default:
+    # DATABASE_URL = "postgresql://user:password@host:port/dbname"
+    # sys.exit("DATABASE_URL is not set, application cannot start.") # Or handle more gracefully
 
-DATABASE_URL = os.path.join(PERSISTENT_DB_DIR, 'queue.db')
+# Configure logging (LOG_DIR is no longer tied to persistent disk for SQLite)
+# For Render, logs are typically handled by the platform via stdout/stderr.
+# If file logging is still desired for some reason, a path needs to be defined.
+# For simplicity with PaaS, often stdout/stderr is preferred.
+# Let's keep file logging for now but make the path simpler or configurable.
+# If running locally without /mnt/data, this path would fail.
+# We'll use a local log directory for now if PERSISTENT_LOG_DIR was removed.
+# However, the previous PERSISTENT_LOG_DIR was for SQLite logs.
+# For general app logs, let's use a local 'logs' directory if not on Render.
+# On Render, it will use /mnt/data/logs as previously configured if that mount exists
+# and is writable. But since we removed disk, let's simplify logging for now.
 
-# Create persistent directories if they don't exist
-os.makedirs(PERSISTENT_DB_DIR, exist_ok=True)
-os.makedirs(PERSISTENT_LOG_DIR, exist_ok=True)
+# Simplified logging setup:
+LOG_DIR_APP = os.path.join(APP_ROOT, 'logs_app') # Local logs directory
+os.makedirs(LOG_DIR_APP, exist_ok=True)
+LOG_FILE_PATH_APP = os.path.join(LOG_DIR_APP, "app.log")
 
-# Configure logging
-LOG_FILE_PATH = os.path.join(PERSISTENT_LOG_DIR, "app.log")
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
-    logging.FileHandler(LOG_FILE_PATH),
-    logging.StreamHandler()
+    logging.FileHandler(LOG_FILE_PATH_APP),
+    logging.StreamHandler() # Keep streaming to console
 ])
 
-# Log path initializations
 logging.info(f"APP_ROOT set to: {APP_ROOT}")
 logging.info(f"APP_DATA_DIR (for CSVs, etc.) set to: {APP_DATA_DIR}")
-logging.info(f"PERSISTENT_DB_DIR set to: {PERSISTENT_DB_DIR} (created if didn't exist).")
-logging.info(f"PERSISTENT_LOG_DIR set to: {PERSISTENT_LOG_DIR} (created if didn't exist).")
-logging.info(f"DATABASE_URL set to: {DATABASE_URL}")
-logging.info(f"LOG_FILE_PATH set to: {LOG_FILE_PATH}")
+logging.info(f"DATABASE_URL (from env): {'********' if DATABASE_URL else 'NOT SET'}") # Avoid logging full URL
+logging.info(f"LOG_FILE_PATH_APP set to: {LOG_FILE_PATH_APP}")
 
 app = Flask(__name__)
 
@@ -111,168 +120,81 @@ POST_LABEL_MAPPINGS_STORE = {}
 # Old global paths and direct loads are removed as they are now per-country
 # heart_img_path remains global as specified.
 
-def init_sqlite_db():
-    """Initializes the SQLite database and creates the prayer_queue table."""
-    logging.info(f"Initializing SQLite database at {DATABASE_URL}...")
+def get_db_conn():
+    """Establishes a connection to the PostgreSQL database."""
+    if not DATABASE_URL:
+        logging.error("DATABASE_URL is not set. Cannot connect to the database.")
+        raise ValueError("DATABASE_URL not configured")
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS prayer_queue (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                person_name TEXT NOT NULL,
-                post_label TEXT,
-                country_code TEXT NOT NULL,
-                party TEXT,
-                thumbnail TEXT,
-                added_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(person_name, post_label, country_code)
-            )
-        ''')
-        logging.info("Ensured prayer_queue table exists.")
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except psycopg2.Error as e:
+        logging.error(f"Error connecting to PostgreSQL database: {e}")
+        raise
 
-        # Create prayed_items table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS prayed_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                person_name TEXT NOT NULL,
-                post_label TEXT,
-                country_code TEXT NOT NULL,
-                party TEXT,
-                thumbnail TEXT,
-                prayed_timestamp TIMESTAMP NOT NULL
-            )
-        ''')
-        logging.info("Ensured prayed_items table exists.")
-
-        # Create unique index for prayed_items
-        cursor.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_prayed_items_unique
-            ON prayed_items (person_name, post_label, country_code);
-        ''')
-        logging.info("Ensured idx_prayed_items_unique index exists on prayed_items table.")
-
-        # Create prayer_candidates table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS prayer_candidates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                person_name TEXT NOT NULL,
-                post_label TEXT,
-                country_code TEXT NOT NULL,
-                party TEXT,
-                thumbnail TEXT,
-                status TEXT NOT NULL,
-                status_timestamp TIMESTAMP NOT NULL,
-                initial_add_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                hex_id TEXT
-            )
-        ''')
-        logging.info("Ensured prayer_candidates table exists with hex_id column.")
-
-        # Create unique index for prayer_candidates
-        # No change to unique index, hex_id is not part of uniqueness constraint
-        cursor.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_unique
-            ON prayer_candidates (person_name, post_label, country_code);
-        ''')
-        logging.info("Ensured idx_candidates_unique index exists on prayer_candidates table.")
-
-        conn.commit()
-        logging.info("Successfully initialized SQLite database tables and indexes.")
-    except sqlite3.Error as e:
-        logging.error(f"Error initializing SQLite database: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def migrate_to_single_table_schema():
-    """Migrates data from old prayer_queue and prayed_items tables to the new prayer_candidates table."""
-    logging.info("Starting migration to single table schema if conditions are met.")
+def init_db():
+    """Initializes the PostgreSQL database and creates tables if they don't exist."""
+    logging.info("Initializing PostgreSQL database schema...")
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        conn.row_factory = sqlite3.Row # To access columns by name
-        cursor = conn.cursor()
+        conn = get_db_conn()
+        with conn.cursor() as cursor: # Using 'with' ensures cursor is closed
+            # Old tables (prayer_queue, prayed_items) are removed as they are obsolete
+            # and migrations for them will be removed.
 
-        # 1. Check conditions for migration
-        cursor.execute("SELECT COUNT(*) FROM prayer_candidates")
-        candidates_count = cursor.fetchone()[0]
+            # Create prayer_candidates table (primary table for PostgreSQL)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS prayer_candidates (
+                    id SERIAL PRIMARY KEY,
+                    person_name TEXT NOT NULL,
+                    post_label TEXT,
+                    country_code TEXT NOT NULL,
+                    party TEXT,
+                    thumbnail TEXT,
+                    status TEXT NOT NULL,
+                    status_timestamp TIMESTAMP NOT NULL,
+                    initial_add_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    hex_id TEXT
+                )
+            ''')
+            logging.info("Ensured prayer_candidates table exists.")
 
-        cursor.execute("SELECT COUNT(*) FROM prayer_queue")
-        queue_count = cursor.fetchone()[0]
+            # Create unique index for prayer_candidates
+            # PostgreSQL syntax for unique index is similar.
+            # Using 'CREATE UNIQUE INDEX IF NOT EXISTS' for idempotency.
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_unique
+                ON prayer_candidates (person_name, post_label, country_code);
+            ''')
+            logging.info("Ensured idx_candidates_unique index exists on prayer_candidates table.")
 
-        cursor.execute("SELECT COUNT(*) FROM prayed_items")
-        prayed_count = cursor.fetchone()[0]
-
-        if candidates_count > 0:
-            logging.info(f"Prayer_candidates table is not empty (contains {candidates_count} items). Migration will not run.")
-            return
-
-        if queue_count == 0 and prayed_count == 0:
-            logging.info("Both prayer_queue and prayed_items tables are empty. No data to migrate.")
-            return
-
-        logging.info(f"Conditions met for migration: prayer_candidates is empty and old tables have data (queue: {queue_count}, prayed: {prayed_count}).")
-
-        # 2. Migrate from prayer_queue
-        migrated_from_queue = 0
-        if queue_count > 0:
-            cursor.execute("SELECT person_name, post_label, country_code, party, thumbnail, added_timestamp FROM prayer_queue")
-            queue_items = cursor.fetchall()
-            for item in queue_items:
-                try:
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp, hex_id)
-                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, NULL)
-                    ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['added_timestamp'], item['added_timestamp']))
-                    if cursor.rowcount > 0:
-                        migrated_from_queue += 1
-                except sqlite3.Error as e:
-                    logging.error(f"Error migrating item {item['person_name']} from prayer_queue: {e}")
-            logging.info(f"Migrated {migrated_from_queue} records from prayer_queue to prayer_candidates.")
-
-        # 3. Migrate from prayed_items
-        migrated_from_prayed = 0
-        if prayed_count > 0:
-            cursor.execute("SELECT person_name, post_label, country_code, party, thumbnail, prayed_timestamp FROM prayed_items")
-            prayed_items_list = cursor.fetchall()
-            for item in prayed_items_list:
-                try:
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, initial_add_timestamp, hex_id)
-                        VALUES (?, ?, ?, ?, ?, 'prayed', ?, ?, NULL)
-                    ''', (item['person_name'], item['post_label'], item['country_code'], item['party'], item['thumbnail'], item['prayed_timestamp'], item['prayed_timestamp']))
-                    if cursor.rowcount > 0:
-                        migrated_from_prayed += 1
-                except sqlite3.Error as e:
-                    logging.error(f"Error migrating item {item['person_name']} from prayed_items: {e}")
-            logging.info(f"Migrated {migrated_from_prayed} records from prayed_items to prayer_candidates.")
-
-        conn.commit()
-        logging.info("Migration to single table schema completed successfully.")
-
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error during migration to single table schema: {e}")
+            conn.commit()
+            logging.info("Successfully initialized PostgreSQL database tables and indexes.")
+    except psycopg2.Error as e:
+        logging.error(f"Error initializing PostgreSQL database: {e}")
         if conn:
-            conn.rollback()
-    except Exception as e_main:
-        logging.error(f"Unexpected error during migration to single table schema: {e_main}", exc_info=True)
-        if conn:
-            conn.rollback()
+            conn.rollback() # Rollback on error
+    except ValueError as ve: # Catch DATABASE_URL not set error
+        logging.error(str(ve)) # Log the error from get_db_conn
+        # Application might not be able to proceed without DB.
     finally:
         if conn:
             conn.close()
+
+# Old migration functions (migrate_to_single_table_schema, migrate_json_logs_to_db)
+# are removed as they were SQLite specific and are not needed for the new PostgreSQL setup.
 
 def initialize_app_data():
     # The content from the existing `if __name__ == '__main__':` block's loop
     # and the thread starting line will go here.
-    init_sqlite_db() # Initialize SQLite database
-    migrate_to_single_table_schema() # Migrate to new schema if needed
-    migrate_json_logs_to_db() # Migrate old JSON logs if prayed_items table is empty
-    load_prayed_for_data_from_db() # Load all prayed for data from DB into memory
-    logging.debug("Starting application data initialization...") # Changed from INFO to DEBUG
+    if DATABASE_URL: # Only attempt DB operations if DATABASE_URL is set
+        init_db() # Initialize PostgreSQL database
+        # Old migrations (migrate_to_single_table_schema, migrate_json_logs_to_db) are removed.
+        load_prayed_for_data_from_db() # Load all prayed for data from DB into memory
+    else:
+        logging.error("Skipping database initialization and data loading as DATABASE_URL is not set.")
+
+    logging.debug("Starting application data initialization (static data like CSVs)...")
 
     # Loop for deputies_data, HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE initialization
     for country_code_init in COUNTRIES_CONFIG.keys():
@@ -423,26 +345,28 @@ def migrate_json_logs_to_db():
             conn.close()
 
 def get_current_queue_items_from_db():
-    """Fetches all items from the prayer_queue table, ordered by timestamp."""
+    """Fetches all items from the prayer_candidates table with status 'queued', for PostgreSQL."""
     items = []
     conn = None
+    if not DATABASE_URL:
+        logging.error("DATABASE_URL not set, cannot fetch queue items.")
+        return items
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        conn.row_factory = sqlite3.Row # Access columns by name
-        cursor = conn.cursor()
-        # Select from prayer_candidates with status 'queued'
-        cursor.execute("""
-            SELECT id, person_name, post_label, country_code, party, thumbnail, initial_add_timestamp AS added_timestamp, hex_id
-            FROM prayer_candidates
-            WHERE status = 'queued'
-            ORDER BY id ASC
-        """)
-        rows = cursor.fetchall()
-        for row in rows:
-            items.append(dict(row))
-        logging.info(f"Fetched {len(items)} items with status 'queued' from prayer_candidates.")
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error in get_current_queue_items_from_db: {e}")
+        conn = get_db_conn()
+        with conn.cursor(cursor_factory=DictCursor) as cursor:
+            cursor.execute("""
+                SELECT id, person_name, post_label, country_code, party, thumbnail,
+                       initial_add_timestamp AS added_timestamp, hex_id
+                FROM prayer_candidates
+                WHERE status = 'queued'
+                ORDER BY id ASC
+            """)
+            rows = cursor.fetchall()
+            # DictCursor already returns list of dict-like objects
+            items = [dict(row) for row in rows]
+            logging.info(f"Fetched {len(items)} items with status 'queued' from prayer_candidates (PostgreSQL).")
+    except psycopg2.Error as e:
+        logging.error(f"PostgreSQL error in get_current_queue_items_from_db: {e}")
     except Exception as e_gen:
         logging.error(f"Unexpected error in get_current_queue_items_from_db: {e_gen}", exc_info=True)
     finally:
@@ -490,211 +414,161 @@ def process_deputies(csv_data, country_code):
 # Function to periodically update the queue
 def update_queue():
     with app.app_context():
-        logging.info("Update_queue function execution started.") # Changed log message slightly for clarity
+        logging.info("Update_queue function execution started.")
         conn = None
+        if not DATABASE_URL:
+            logging.error("[update_queue] DATABASE_URL not set. Aborting queue update.")
+            return
         try:
-            logging.info("[update_queue] Attempting to connect to DB.") # Kept original log
-            conn = sqlite3.connect(DATABASE_URL)
-            conn.row_factory = sqlite3.Row # <--- ADD THIS LINE
-            cursor = conn.cursor()
+            logging.info("[update_queue] Attempting to connect to PostgreSQL DB.")
+            conn = get_db_conn()
+            with conn.cursor(cursor_factory=DictCursor) as cursor:
 
-            # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
-            logging.info("[update_queue] Deleting existing 'queued' items from prayer_candidates table before repopulation.")
-            cursor.execute("DELETE FROM prayer_candidates WHERE status = 'queued'")
-            # conn.commit() # Commit this delete immediately
-            # logging.info(f"[update_queue] Deleted {cursor.rowcount} existing 'queued' items.")
-            # Decided to commit at the end of all operations or if items_added_to_db_this_cycle > 0.
-            # If the function errors out before insertions, this delete might be rolled back if not committed here.
-            # For safety and clarity of this step, let's commit the delete separately.
-            conn.commit()
-            logging.info(f"[update_queue] Committed deletion of existing 'queued' items. Rows affected: {cursor.rowcount}")
+                # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
+                logging.info("[update_queue] Deleting existing 'queued' items from prayer_candidates table before repopulation.")
+                cursor.execute("DELETE FROM prayer_candidates WHERE status = 'queued'")
+                logging.info(f"[update_queue] Deleted {cursor.rowcount} existing 'queued' items.")
+                # No separate commit here for delete; will commit at the end of all operations.
 
+                logging.info("[update_queue] Proceeding with data population from CSVs.")
 
-            # Check if prayer_candidates has any entries at all.
-            # If it does, assume seeding/migration has occurred.
-            # cursor.execute("SELECT COUNT(id) FROM prayer_candidates")
-            # count = cursor.fetchone()[0]
-            # logging.info(f"[update_queue] Current count in prayer_candidates table: {count}")
+                # Fetch identifiers of already prayed individuals
+                cursor.execute("SELECT person_name, post_label, country_code FROM prayer_candidates WHERE status = 'prayed'")
+                already_prayed_records = cursor.fetchall()
+                already_prayed_ids = set()
+                for record in already_prayed_records:
+                    pn = record['person_name']
+                    pl = record['post_label'] if record['post_label'] is not None else ""
+                    cc = record['country_code']
+                    already_prayed_ids.add((pn, pl, cc))
+                logging.info(f"[update_queue] Found {len(already_prayed_ids)} individuals already marked as 'prayed'.")
 
-            # if count > 0:
-            #     logging.info(f"[update_queue] prayer_candidates is not empty (count: {count}). Seeding will be skipped.")
-            #     return
+                all_potential_candidates = []
+                # Phase 1: Collect all potential candidates from all countries
+                for country_code_collect in COUNTRIES_CONFIG.keys():
+                    df_raw = fetch_csv(country_code_collect)
+                    if df_raw.empty:
+                        logging.warning(f"CSV data for {country_code_collect} is empty. Skipping for initial seeding.")
+                        continue
 
-            # logging.info("[update_queue] prayer_candidates is empty. Proceeding with initial data population from CSVs.")
-            # If table is empty, proceed with the existing logic to populate prayer_candidates with 'queued' items.
-            # The above check is removed to allow update_queue to always run fully.
-            logging.info("[update_queue] Proceeding with data population from CSVs.")
+                    num_to_select = COUNTRIES_CONFIG[country_code_collect].get('total_representatives')
+                    if num_to_select is None:
+                        df_sampled = df_raw.sample(frac=1).reset_index(drop=True)
+                    elif len(df_raw) > num_to_select:
+                        df_sampled = df_raw.sample(n=num_to_select).reset_index(drop=True)
+                    else:
+                        df_sampled = df_raw.sample(frac=1).reset_index(drop=True)
+                    logging.info(f"Selected {len(df_sampled)} individuals from {country_code_collect} CSV (before filtering prayed).")
 
-            # Fetch identifiers of already prayed individuals
-            cursor.execute("SELECT person_name, post_label, country_code FROM prayer_candidates WHERE status = 'prayed'")
-            already_prayed_records = cursor.fetchall()
-            already_prayed_ids = set()
-            for record in already_prayed_records:
-                # Normalize post_label for consistent set storage and lookup: use empty string if None
-                pn = record['person_name']
-                pl = record['post_label'] if record['post_label'] is not None else "" # Match how it might be checked later
-                cc = record['country_code']
-                already_prayed_ids.add((pn, pl, cc))
-            logging.info(f"[update_queue] Found {len(already_prayed_ids)} individuals already marked as 'prayed'.")
+                    for index, row in df_sampled.iterrows():
+                        if row.get('person_name'):
+                            item = row.to_dict()
+                            item['country_code'] = country_code_collect
+                            item['party'] = item.get('party') or 'Other'
 
-            all_potential_candidates = []
-            # Phase 1: Collect all potential candidates from all countries
-            for country_code_collect in COUNTRIES_CONFIG.keys():
-                df_raw = fetch_csv(country_code_collect) # Renamed to df_raw
-                if df_raw.empty:
-                    logging.warning(f"CSV data for {country_code_collect} is empty. Skipping for initial seeding.") # Changed to warning
-                    continue
-
-                # Get the number of representatives to select for this country
-                num_to_select = COUNTRIES_CONFIG[country_code_collect].get('total_representatives')
-                if num_to_select is None:
-                    logging.warning(f"'total_representatives' not configured for {country_code_collect}. Using all entries from CSV.")
-                    df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if no cap
-                elif len(df_raw) > num_to_select:
-                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries, selecting {num_to_select} randomly (before filtering prayed).")
-                    df_sampled = df_raw.sample(n=num_to_select).reset_index(drop=True)
-                else:
-                    logging.info(f"CSV for {country_code_collect} has {len(df_raw)} entries (<= {num_to_select}). Taking all and shuffling (before filtering prayed).")
-                    df_sampled = df_raw.sample(frac=1).reset_index(drop=True) # Shuffle all if fewer than cap
-
-                logging.info(f"Selected {len(df_sampled)} individuals from {country_code_collect} CSV (before filtering prayed).")
-
-                for index, row in df_sampled.iterrows(): # Iterate over the (potentially) sampled DataFrame
-                    if row.get('person_name'):
-                        item = row.to_dict()
-                        item['country_code'] = country_code_collect
-                        if not item.get('party'): # Standardize party
-                            item['party'] = 'Other'
-
-                        # Prepare for already_prayed_ids check
-                        current_person_name = item['person_name']
-                        current_post_label_raw = item.get('post_label')
-
-                        # Normalize post_label from CSV item for comparison with already_prayed_ids keys
-                        if isinstance(current_post_label_raw, str) and not current_post_label_raw.strip():
+                            current_person_name = item['person_name']
+                            current_post_label_raw = item.get('post_label')
                             post_label_for_check = ""
-                        elif current_post_label_raw is None:
-                            post_label_for_check = ""
-                        else:
-                            post_label_for_check = current_post_label_raw # Keep original potentially unstripped for check if that's how it's stored
-                                                                        # The key is consistency with how already_prayed_ids are created.
-                                                                        # already_prayed_ids uses `pl if pl is not None else ""`. So this should match.
-
-                        candidate_id_tuple = (current_person_name, post_label_for_check, item['country_code'])
-
-                        if candidate_id_tuple not in already_prayed_ids:
-                            # Standardize item['post_label'] for DB storage (applies if it's added to queue)
-                            if isinstance(current_post_label_raw, str) and not current_post_label_raw.strip():
-                                item['post_label'] = None
+                            if isinstance(current_post_label_raw, str) and current_post_label_raw.strip():
+                                post_label_for_check = current_post_label_raw
                             elif current_post_label_raw is None:
-                                item['post_label'] = None
-                            # Else: item['post_label'] is already the correct string from current_post_label_raw via to_dict()
+                                post_label_for_check = ""
 
-                            image_url = item.get('image_url', HEART_IMG_PATH) # HEART_IMG_PATH is a global
-                            if not image_url: # Ensure thumbnail is never empty if image_url was empty string
-                                image_url = HEART_IMG_PATH
-                            item['thumbnail'] = image_url
-                            all_potential_candidates.append(item)
+                            candidate_id_tuple = (current_person_name, post_label_for_check, item['country_code'])
+
+                            if candidate_id_tuple not in already_prayed_ids:
+                                if isinstance(current_post_label_raw, str) and not current_post_label_raw.strip():
+                                    item['post_label'] = None
+                                elif current_post_label_raw is None:
+                                    item['post_label'] = None
+
+                                image_url = item.get('image_url', HEART_IMG_PATH)
+                                if not image_url: image_url = HEART_IMG_PATH
+                                item['thumbnail'] = image_url
+                                all_potential_candidates.append(item)
+                            else:
+                                logging.debug(f"[update_queue] Skipped {candidate_id_tuple} from CSV for {country_code_collect}; already prayed for.")
                         else:
-                            logging.debug(f"[update_queue] Skipped {candidate_id_tuple} from CSV for {country_code_collect}; already prayed for.")
+                            logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index} in sampled data: {row.to_dict()}")
+
+                logging.info(f"[update_queue] Collected {len(all_potential_candidates)} new potential candidates after filtering out prayed ones.")
+                random.shuffle(all_potential_candidates)
+
+                items_added_to_db_this_cycle = 0
+                available_hex_ids_by_country = {}
+                random_allocation_countries = ['israel', 'iran']
+
+                for country_code_hex_prep in random_allocation_countries:
+                    if country_code_hex_prep not in COUNTRIES_CONFIG: continue
+                    hex_map_gdf_prep = HEX_MAP_DATA_STORE.get(country_code_hex_prep)
+                    if hex_map_gdf_prep is not None and not hex_map_gdf_prep.empty and 'id' in hex_map_gdf_prep.columns:
+                        all_map_hex_ids = set(hex_map_gdf_prep['id'].unique())
+                        cursor.execute("""
+                            SELECT hex_id FROM prayer_candidates
+                            WHERE country_code = %s AND hex_id IS NOT NULL AND (status = 'prayed' OR status = 'queued')
+                        """, (country_code_hex_prep,))
+                        used_hex_ids = {r['hex_id'] for r in cursor.fetchall()}
+                        current_available_hex_ids = list(all_map_hex_ids - used_hex_ids)
+                        random.shuffle(current_available_hex_ids)
+                        available_hex_ids_by_country[country_code_hex_prep] = current_available_hex_ids
+                        logging.info(f"[update_queue] For {country_code_hex_prep}: {len(all_map_hex_ids)} total, {len(used_hex_ids)} used, {len(current_available_hex_ids)} available hexes.")
                     else:
-                        logging.debug(f"Skipped entry due to missing person_name for {country_code_collect} at index {index} in sampled data: {row.to_dict()}")
+                        logging.warning(f"[update_queue] Hex map data or 'id' column not available for {country_code_hex_prep}.")
+                        available_hex_ids_by_country[country_code_hex_prep] = []
 
-            logging.info(f"[update_queue] Collected {len(all_potential_candidates)} new potential candidates after filtering out prayed ones.") # Updated log
-            random.shuffle(all_potential_candidates)
-            # logging.info(f"[update_queue] Collected {len(all_potential_candidates)} total potential new candidates from CSVs for initial seeding.") # Old log, replaced by above
+                for item_to_process_for_hex in all_potential_candidates:
+                    item_country_code = item_to_process_for_hex['country_code']
+                    item_to_process_for_hex['hex_id'] = None
+                    if item_country_code in random_allocation_countries and available_hex_ids_by_country.get(item_country_code):
+                        item_to_process_for_hex['hex_id'] = available_hex_ids_by_country[item_country_code].pop()
 
-            items_added_to_db_this_cycle = 0
-            # Connection is already established and cursor is available
+                for item_to_add in all_potential_candidates:
+                    person_name = item_to_add['person_name']
+                    post_label = item_to_add.get('post_label') # Already correctly None if it should be
+                    country_code_add = item_to_add['country_code']
+                    party_add = item_to_add['party']
+                    thumbnail_add = item_to_add['thumbnail']
+                    hex_id_to_insert = item_to_add.get('hex_id')
+                    current_ts_for_status = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # Prepare available hex IDs for random allocation countries
-            available_hex_ids_by_country = {}
-            random_allocation_countries = ['israel', 'iran'] # Define these, or get from config if more dynamic
+                    logging.debug(f"[update_queue] Preparing to insert (PG): Name='{person_name}', Country='{country_code_add}', HexID='{hex_id_to_insert}', PostLabel='{post_label}', Party='{party_add}'")
+                    try:
+                        # PostgreSQL uses ON CONFLICT ... DO NOTHING for INSERT OR IGNORE
+                        # The conflict target must be the column(s) in the unique index.
+                        cursor.execute('''
+                            INSERT INTO prayer_candidates
+                                (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, hex_id)
+                            VALUES (%s, %s, %s, %s, %s, 'queued', %s, %s)
+                            ON CONFLICT (person_name, post_label, country_code) DO NOTHING
+                        ''', (person_name, post_label, country_code_add, party_add, thumbnail_add, current_ts_for_status, hex_id_to_insert))
+                        if cursor.rowcount > 0:
+                            items_added_to_db_this_cycle += 1
+                    except psycopg2.Error as e_insert:
+                        logging.error(f"PostgreSQL error during initial seeding for {person_name} ({post_label}): {e_insert}")
 
-            for country_code_hex_prep in random_allocation_countries:
-                if country_code_hex_prep not in COUNTRIES_CONFIG:
-                    continue # Skip if country not configured
+                if items_added_to_db_this_cycle > 0:
+                    logging.info(f"[update_queue] Successfully prepared to insert {items_added_to_db_this_cycle} new items into prayer_candidates (PostgreSQL).")
+                logging.info(f"[update_queue] Attempted to insert candidates. Number of rows affected reported by cursor: {items_added_to_db_this_cycle} (Note: ON CONFLICT DO NOTHING might show 0 if all conflicted).")
 
-                hex_map_gdf_prep = HEX_MAP_DATA_STORE.get(country_code_hex_prep)
-                if hex_map_gdf_prep is not None and not hex_map_gdf_prep.empty and 'id' in hex_map_gdf_prep.columns:
-                    all_map_hex_ids = set(hex_map_gdf_prep['id'].unique())
+                cursor.execute("SELECT COUNT(id) FROM prayer_candidates WHERE status = 'queued'")
+                count_result = cursor.fetchone()
+                current_db_candidates_size = count_result[0] if count_result else 0
+                logging.info(f"Initial seeding process complete. Current 'queued' items in prayer_candidates (PostgreSQL): {current_db_candidates_size}")
 
-                    # Fetch used hex_ids from DB for this country
-                    cursor.execute("""
-                        SELECT hex_id FROM prayer_candidates
-                        WHERE country_code = ? AND hex_id IS NOT NULL AND (status = 'prayed' OR status = 'queued')
-                    """, (country_code_hex_prep,))
-                    used_hex_ids_rows = cursor.fetchall()
-                    used_hex_ids = {row['hex_id'] for row in used_hex_ids_rows}
+            conn.commit() # Commit all operations (delete and inserts)
+            logging.info(f"[update_queue] Database commit successful for update_queue operations.")
 
-                    current_available_hex_ids = list(all_map_hex_ids - used_hex_ids)
-                    random.shuffle(current_available_hex_ids) # Shuffle for random assignment
-                    available_hex_ids_by_country[country_code_hex_prep] = current_available_hex_ids
-                    logging.info(f"[update_queue] For {country_code_hex_prep}: {len(all_map_hex_ids)} total map hexes, {len(used_hex_ids)} used, {len(current_available_hex_ids)} available for assignment.")
-                else:
-                    logging.warning(f"[update_queue] Hex map data or 'id' column not available for {country_code_hex_prep}. Cannot prepare available hex IDs.")
-                    available_hex_ids_by_country[country_code_hex_prep] = []
-
-            # Assign hex_id to items before adding to DB
-            for item_to_process_for_hex in all_potential_candidates:
-                item_country_code = item_to_process_for_hex['country_code']
-                item_to_process_for_hex['hex_id'] = None # Default to None
-
-                if item_country_code in random_allocation_countries:
-                    if available_hex_ids_by_country.get(item_country_code): # Check if list exists and is not empty
-                        assigned_hex_id = available_hex_ids_by_country[item_country_code].pop()
-                        item_to_process_for_hex['hex_id'] = assigned_hex_id
-                        logging.debug(f"[update_queue] Assigned hex_id {assigned_hex_id} to {item_to_process_for_hex['person_name']} for {item_country_code}")
-                    else:
-                        logging.warning(f"[update_queue] No available hex_ids to assign for {item_to_process_for_hex['person_name']} in {item_country_code}. Map might be full or data missing.")
-
-            # Now, insert items with their assigned hex_ids (or None)
-            for item_to_add in all_potential_candidates:
-                person_name = item_to_add['person_name']
-                post_label = item_to_add['post_label']
-                country_code_add = item_to_add['country_code']
-                party_add = item_to_add['party']
-                thumbnail_add = item_to_add['thumbnail']
-                hex_id_to_insert = item_to_add.get('hex_id') # Get the assigned hex_id
-
-                current_ts_for_status = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                # ADDING DIAGNOSTIC LOGGING HERE
-                logging.debug(f"[update_queue] Preparing to insert: Name='{person_name}', Country='{country_code_add}', HexID='{hex_id_to_insert}', PostLabel='{post_label}', Party='{party_add}'")
-                try:
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, hex_id)
-                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
-                    ''', (person_name, post_label if post_label else None, country_code_add, party_add, thumbnail_add, current_ts_for_status, hex_id_to_insert))
-                    if cursor.rowcount > 0:
-                        items_added_to_db_this_cycle += 1
-                except sqlite3.Error as e_insert:
-                    logging.error(f"SQLite error during initial seeding into prayer_candidates for {person_name} ({post_label}): {e_insert}")
-
-            if items_added_to_db_this_cycle > 0:
-                conn.commit() # Commit all successful inserts
-                logging.info(f"[update_queue] Database commit successful for {items_added_to_db_this_cycle} items.")
-                logging.info(f"[update_queue] Successfully inserted {items_added_to_db_this_cycle} new items into prayer_candidates during this seeding cycle.")
-            # Log even if 0 items were added, to confirm the loop completed.
-            logging.info(f"[update_queue] Attempted to insert candidates. Number of rows affected in this batch: {items_added_to_db_this_cycle}")
-
-
-            current_db_candidates_size = 0 # Renamed variable
-            cursor.execute("SELECT COUNT(id) FROM prayer_candidates WHERE status = 'queued'") # Check only 'queued'
-            count_result = cursor.fetchone()
-            if count_result:
-                current_db_candidates_size = count_result[0]
-            logging.info(f"Initial seeding process complete. Current 'queued' items in prayer_candidates: {current_db_candidates_size}")
-
-        except Exception as e: # General exception
-            logging.error(f"[update_queue] An critical error occurred during execution: {e}", exc_info=True)
-            if conn: # Rollback if error occurred during transaction
-                conn.rollback()
+        except psycopg2.Error as e: # psycopg2 specific error
+            logging.error(f"[update_queue] A PostgreSQL error occurred: {e}", exc_info=True)
+            if conn: conn.rollback()
+        except Exception as e_gen: # General exception
+            logging.error(f"[update_queue] An critical error occurred during execution: {e_gen}", exc_info=True)
+            if conn: conn.rollback()
         finally:
-            logging.info("[update_queue] Reached finally block, will close connection if open.")
+            logging.info("[update_queue] Reached finally block, will close PostgreSQL connection if open.")
             if conn:
                 conn.close()
-                logging.debug("SQLite connection closed in update_queue.")
+                logging.debug("PostgreSQL connection closed in update_queue.")
         # The while True loop and time.sleep(90) are removed.
 
 @app.route('/about')
@@ -707,41 +581,40 @@ def about_page():
     return render_template('about.html', now=now)
 
 def load_prayed_for_data_from_db():
-    """Loads all prayed-for items from the SQLite database into the global prayed_for_data."""
+    """Loads all prayed-for items from the PostgreSQL database into the global prayed_for_data."""
     global prayed_for_data
-    # Clear existing in-memory data first
     for country in COUNTRIES_CONFIG.keys():
         prayed_for_data[country] = []
 
     conn = None
+    if not DATABASE_URL:
+        logging.error("DATABASE_URL not set, cannot load prayed for data.")
+        return
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        conn.row_factory = sqlite3.Row # Access columns by name
-        cursor = conn.cursor()
-        # Select from prayer_candidates with status 'prayed'
-        cursor.execute("""
-            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id
-            FROM prayer_candidates
-            WHERE status = 'prayed'
-        """)
-        rows = cursor.fetchall()
-        loaded_count = 0
-        for row_data in rows:
-            item = dict(row_data) # This will now include hex_id if it was selected
-            # 'timestamp' is already aliased from status_timestamp in the query
-            country_code_load = item.get('country_code') # Renamed variable
-            if country_code_load in prayed_for_data:
-                prayed_for_data[country_code_load].append(item) # item now contains hex_id
-                loaded_count +=1
-            else:
-                logging.warning(f"Found item in prayer_candidates (status='prayed') with unknown country_code: {country_code_load} - Item: {item.get('person_name')}")
-
-        logging.info(f"Loaded {loaded_count} items with status 'prayed' from prayer_candidates into memory.")
-        for country_code_key in prayed_for_data: # Use a different variable name
-             logging.debug(f"Country {country_code_key} has {len(prayed_for_data[country_code_key])} prayed items in memory after DB load from prayer_candidates.")
-
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error in load_prayed_for_data_from_db (reading prayer_candidates): {e}")
+        conn = get_db_conn()
+        with conn.cursor(cursor_factory=DictCursor) as cursor:
+            cursor.execute("""
+                SELECT person_name, post_label, country_code, party, thumbnail,
+                       status_timestamp AS timestamp, hex_id
+                FROM prayer_candidates
+                WHERE status = 'prayed'
+            """)
+            rows = cursor.fetchall()
+            loaded_count = 0
+            for row_data in rows:
+                item = dict(row_data)
+                country_code_load = item.get('country_code')
+                if country_code_load in prayed_for_data:
+                    prayed_for_data[country_code_load].append(item)
+                    loaded_count +=1
+                else:
+                    logging.warning(f"Found item in prayer_candidates (status='prayed') with unknown country_code: {country_code_load} - Item: {item.get('person_name')}")
+            logging.info(f"Loaded {loaded_count} items with status 'prayed' from prayer_candidates (PostgreSQL) into memory.")
+        # Optional: detailed logging per country
+        # for country_code_key in prayed_for_data:
+        #      logging.debug(f"Country {country_code_key} has {len(prayed_for_data[country_code_key])} prayed items in memory after DB load.")
+    except psycopg2.Error as e:
+        logging.error(f"PostgreSQL error in load_prayed_for_data_from_db: {e}")
     except Exception as e_gen:
         logging.error(f"Unexpected error in load_prayed_for_data_from_db: {e_gen}", exc_info=True)
     finally:
@@ -749,43 +622,42 @@ def load_prayed_for_data_from_db():
             conn.close()
 
 def reload_single_country_prayed_data_from_db(country_code_to_reload):
+    """Reloads prayed-for items for a single country from PostgreSQL into global prayed_for_data."""
     global prayed_for_data
     if country_code_to_reload not in prayed_for_data:
         logging.warning(f"[reload_single_country_prayed_data_from_db] Invalid country_code: {country_code_to_reload}")
         return
 
-    logging.info(f"[reload_single_country_prayed_data_from_db] Reloading prayed_for_data for country: {country_code_to_reload}")
-    prayed_for_data[country_code_to_reload] = [] # Clear current list for this country
+    logging.info(f"[reload_single_country_prayed_data_from_db] Reloading prayed_for_data for country: {country_code_to_reload} (PostgreSQL)")
+    prayed_for_data[country_code_to_reload] = []
 
-    conn_reload = None
+    conn = None
+    if not DATABASE_URL:
+        logging.error(f"DATABASE_URL not set, cannot reload prayed for data for {country_code_to_reload}.")
+        return
     try:
-        conn_reload = sqlite3.connect(DATABASE_URL)
-        conn_reload.row_factory = sqlite3.Row
-        cursor_reload = conn_reload.cursor()
-
-        # Select from prayer_candidates with status 'prayed' for the specific country
-        cursor_reload.execute("""
-            SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id
-            FROM prayer_candidates
-            WHERE status = 'prayed' AND country_code = ?
-        """, (country_code_to_reload,))
-
-        rows = cursor_reload.fetchall()
-        loaded_count = 0
-        for row_data in rows:
-            item = dict(row_data) # This will now include hex_id
-            # 'timestamp' is already aliased from status_timestamp
-            prayed_for_data[country_code_to_reload].append(item) # item now contains hex_id
-            loaded_count += 1
-        logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} 'prayed' items for {country_code_to_reload} from prayer_candidates into prayed_for_data.")
-
-    except sqlite3.Error as e:
-        logging.error(f"[reload_single_country_prayed_data_from_db] SQLite error for {country_code_to_reload} (reading prayer_candidates): {e}")
+        conn = get_db_conn()
+        with conn.cursor(cursor_factory=DictCursor) as cursor:
+            cursor.execute("""
+                SELECT person_name, post_label, country_code, party, thumbnail,
+                       status_timestamp AS timestamp, hex_id
+                FROM prayer_candidates
+                WHERE status = 'prayed' AND country_code = %s
+            """, (country_code_to_reload,))
+            rows = cursor.fetchall()
+            loaded_count = 0
+            for row_data in rows:
+                item = dict(row_data)
+                prayed_for_data[country_code_to_reload].append(item)
+                loaded_count += 1
+            logging.info(f"[reload_single_country_prayed_data_from_db] Reloaded {loaded_count} 'prayed' items for {country_code_to_reload} (PostgreSQL).")
+    except psycopg2.Error as e:
+        logging.error(f"[reload_single_country_prayed_data_from_db] PostgreSQL error for {country_code_to_reload}: {e}")
     except Exception as e_gen:
         logging.error(f"[reload_single_country_prayed_data_from_db] Unexpected error for {country_code_to_reload}: {e_gen}", exc_info=True)
     finally:
-        if conn_reload:
-            conn_reload.close()
+        if conn:
+            conn.close()
 
 @app.route('/')
 def home():
@@ -928,71 +800,67 @@ def process_item():
     item_processed = False
     processed_item_details = {}
     item_id_to_process_str = request.form.get('item_id') # Renamed for clarity
-    item_id_to_process = None # Initialize for use in logging in case of early error
+    item_id_to_process = None
 
     if not item_id_to_process_str:
         logging.error("/process_item: Missing 'item_id' in POST request.")
         return jsonify(error="Missing item_id"), 400
-
     try:
         item_id_to_process = int(item_id_to_process_str)
     except ValueError:
         logging.error(f"/process_item: Invalid 'item_id' format: {item_id_to_process_str}.")
         return jsonify(error="Invalid item_id format"), 400
 
+    if not DATABASE_URL:
+        logging.error("/process_item: DATABASE_URL not set.")
+        return jsonify(error="Database not configured"), 500
+
+    conn = None
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        conn = get_db_conn()
+        with conn.cursor(cursor_factory=DictCursor) as cursor:
+            # Fetch the item's details first
+            cursor.execute("SELECT * FROM prayer_candidates WHERE id = %s AND status = 'queued'", (item_id_to_process,))
+            row = cursor.fetchone()
 
-        # Fetch the item's details first and ensure it's 'queued'
-        # Ensure hex_id is fetched by using "SELECT *" or explicitly adding it.
-        # "SELECT *" already includes all columns, so hex_id will be fetched.
-        cursor.execute("SELECT * FROM prayer_candidates WHERE id = ? AND status = 'queued'", (item_id_to_process,))
-        row = cursor.fetchone()
+            if row:
+                item_to_process = dict(row)
+                person_name_to_log = item_to_process.get('person_name', 'N/A')
+                country_code_item = item_to_process['country_code']
+                logging.info(f"Attempting to process item ID={item_id_to_process} (Name='{person_name_to_log}', HexID={item_to_process.get('hex_id')}) for PostgreSQL.")
 
-        if row:
-            item_to_process = dict(row) # This will now include hex_id
-            person_name_to_log = item_to_process.get('person_name', 'N/A')
-            country_code_item = item_to_process['country_code']
-            logging.info(f"Attempting to process item ID={item_id_to_process} (Name={person_name_to_log}, HexID={item_to_process.get('hex_id')}) as requested by frontend.")
+                new_status_timestamp = datetime.now()
+                # Using %s for placeholders in PostgreSQL
+                cursor.execute("""
+                    UPDATE prayer_candidates
+                    SET status = 'prayed', status_timestamp = %s
+                    WHERE id = %s AND status = 'queued'
+                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), item_id_to_process))
 
-            new_status_timestamp = datetime.now()
-            cursor.execute("""
-                UPDATE prayer_candidates
-                SET status = 'prayed', status_timestamp = ?
-                WHERE id = ? AND status = 'queued'
-            """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), item_id_to_process))
-
-            if cursor.rowcount > 0:
-                conn.commit()
-                logging.info(f"[process_item] Successfully committed DB update for item ID={item_id_to_process} to 'prayed'.")
-                item_processed = True
-                processed_item_details = {
-                    'person_name': item_to_process['person_name'],
-                    'post_label': item_to_process.get('post_label'),
-                    'country_code': country_code_item,
-                    'party': item_to_process.get('party'),
-                    'thumbnail': item_to_process.get('thumbnail'),
-                    'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    'hex_id': item_to_process.get('hex_id') # Add hex_id here
-                }
-                # This block should be removed or commented out:
-                # if country_code_item in prayed_for_data:
-                #     prayed_for_data[country_code_item].append(processed_item_details)
-                # else:
-                #     logging.warning(f"Country code {country_code_item} not found in prayed_for_data for item {person_name_to_log}. In-memory list not updated by process_item.")
+                if cursor.rowcount > 0:
+                    conn.commit()
+                    logging.info(f"[process_item] Successfully committed DB update for item ID={item_id_to_process} to 'prayed' (PostgreSQL).")
+                    item_processed = True
+                    processed_item_details = {
+                        'person_name': item_to_process['person_name'],
+                        'post_label': item_to_process.get('post_label'),
+                        'country_code': country_code_item,
+                        'party': item_to_process.get('party'),
+                        'thumbnail': item_to_process.get('thumbnail'),
+                        'timestamp': new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                        'hex_id': item_to_process.get('hex_id')
+                    }
+                else:
+                    conn.rollback() # Rollback if update didn't affect rows (e.g. item status changed)
+                    logging.warning(f"Item ID={item_id_to_process} (Name='{person_name_to_log}') was not updated to 'prayed' (PostgreSQL); status may have changed or item no longer exists as 'queued'.")
             else:
-                conn.rollback()
-                logging.warning(f"Item ID={item_id_to_process} (Name={person_name_to_log}) was not updated to 'prayed'; status may have changed or item no longer exists as 'queued'.")
-        else:
-            logging.warning(f"/process_item: Item with ID={item_id_to_process} not found or not in 'queued' state at time of selection.")
+                logging.warning(f"/process_item: Item with ID={item_id_to_process} not found or not in 'queued' state (PostgreSQL).")
 
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error in /process_item for ID={item_id_to_process}: {e}", exc_info=True) # Added exc_info
+    except psycopg2.Error as e:
+        logging.error(f"PostgreSQL error in /process_item for ID={item_id_to_process}: {e}", exc_info=True)
         if conn: conn.rollback()
-    except Exception as e:
-        logging.error(f"Unexpected error in /process_item for ID={item_id_to_process}: {e}", exc_info=True)
+    except Exception as e_gen: # Renamed 'e' to 'e_gen' to avoid conflict if psycopg2.Error is aliased as e
+        logging.error(f"Unexpected error in /process_item for ID={item_id_to_process}: {e_gen}", exc_info=True)
         if conn: conn.rollback()
     finally:
         if conn: conn.close()
@@ -1239,20 +1107,25 @@ def prayed_list_overall():
 @app.route('/purge')
 def purge_queue():
     conn = None
+    if not DATABASE_URL:
+        logging.error("/purge_queue: DATABASE_URL not set.")
+        # Potentially redirect with error, or just log and proceed to clear memory / repopulate (which will fail on DB ops)
+        # For now, let it try to connect and fail, to keep behavior somewhat consistent.
+        pass # Fall through to try-catch block
+
     try:
-        conn = sqlite3.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM prayer_candidates")
-        logging.info("Purged all items from SQLite prayer_candidates table.")
-        # Removing old table purges:
-        # cursor.execute("DELETE FROM prayer_queue")
-        # logging.info("Purged all items from SQLite prayer_queue table.")
-        # cursor.execute("DELETE FROM prayed_items")
-        # logging.info("Purged all items from SQLite prayed_items table.")
-        conn.commit()
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error during purge of prayer_candidates table: {e}")
+        conn = get_db_conn()
+        with conn.cursor() as cursor: # No DictCursor needed for DELETE
+            cursor.execute("DELETE FROM prayer_candidates")
+            conn.commit()
+            logging.info(f"Purged {cursor.rowcount} items from PostgreSQL prayer_candidates table.")
+    except psycopg2.Error as e:
+        logging.error(f"PostgreSQL error during purge of prayer_candidates table: {e}")
         if conn:
+            conn.rollback()
+    except Exception as e_gen: # Catch other errors like get_db_conn failing
+        logging.error(f"Unexpected error during purge_queue DB operations: {e_gen}", exc_info=True)
+        if conn: # conn might not be set if get_db_conn failed
             conn.rollback()
     finally:
         if conn:
@@ -1336,135 +1209,111 @@ def put_back_in_queue():
         # This logging uses log_display_post_label for clarity on what's being queried
         logging.info(f"Preparing to put back item: Name='{person_name}', PostLabel for DB Query={log_display_post_label}, Country='{item_country_code_from_form}'.")
 
-        # --- START OF NEW DIAGNOSTIC BLOCK ---
+        # --- START OF DIAGNOSTIC BLOCK (Adapted for PostgreSQL) ---
+        # This diagnostic block can be helpful but adds overhead. Consider removing or commenting out for production.
         diag_conn = None
-        try:
-            diag_conn = sqlite3.connect(DATABASE_URL)
-            diag_conn.row_factory = sqlite3.Row
-            diag_cursor = diag_conn.cursor()
+        if DATABASE_URL: # Only run if DB is configured
+            try:
+                diag_conn = get_db_conn()
+                with diag_conn.cursor(cursor_factory=DictCursor) as diag_cursor:
+                    diag_select_sql = "SELECT * FROM prayer_candidates WHERE person_name = %s AND country_code = %s"
+                    diag_params = [person_name, item_country_code_from_form]
 
-            # Base of the SELECT query
-            diag_select_sql = "SELECT * FROM prayer_candidates WHERE person_name = ? AND country_code = ?"
-            diag_params = [person_name, item_country_code_from_form]
+                    if is_post_label_null_in_db_query:
+                        diag_select_sql += " AND post_label IS NULL"
+                    else:
+                        diag_select_sql += " AND post_label = %s"
+                        diag_params.append(query_post_label_value_for_db)
 
-            # Conditionally add post_label check
-            if is_post_label_null_in_db_query: # True if post_label_form was None, empty, or whitespace
-                diag_select_sql += " AND post_label IS NULL"
-                # No change to diag_params needed
-            else: # post_label_form has actual content
-                diag_select_sql += " AND post_label = ?"
-                diag_params.append(query_post_label_value_for_db) # query_post_label_value_for_db holds the actual string
+                    logging.debug(f"[DIAGNOSTIC PG] Executing SELECT: {diag_select_sql} with params {diag_params}")
+                    diag_cursor.execute(diag_select_sql, tuple(diag_params))
+                    diagnostic_row = diag_cursor.fetchone()
 
-            logging.debug(f"[DIAGNOSTIC] Executing SELECT: {diag_select_sql} with params {diag_params}")
-            diag_cursor.execute(diag_select_sql, tuple(diag_params)) # Ensure diag_params is a tuple
-            diagnostic_row = diag_cursor.fetchone()
-
-            if diagnostic_row:
-                logging.info(f"[DIAGNOSTIC] Found existing record for {person_name} (PostLabel in form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}): Status='{diagnostic_row['status']}', DB PostLabel='{diagnostic_row['post_label']}', ID='{diagnostic_row['id']}'")
-            else:
-                logging.warning(f"[DIAGNOSTIC] No record found for {person_name} (PostLabel in form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}) with the specified name/post_label/country combination.")
-
-        except sqlite3.Error as e_diag:
-            logging.error(f"[DIAGNOSTIC] SQLite error during diagnostic select: {e_diag}", exc_info=True) # Add exc_info
-        except Exception as e_diag_generic:
-            logging.error(f"[DIAGNOSTIC] Generic error during diagnostic select: {e_diag_generic}", exc_info=True)
-        finally:
-            if diag_conn:
-                diag_conn.close()
-        # --- END OF NEW DIAGNOSTIC BLOCK ---
-        # --- End of new DB query logic for post_label --- # This comment is correctly placed after the original logic block it refers to.
-
-        # The part finding item_to_put_back_from_memory can remain as is, using post_label_key_search_for_memory
-        # This section is primarily for fetching the full item details if needed, though not strictly required if keys are sufficient.
-        item_to_put_back_from_memory = None
-        item_index_to_remove_from_memory = -1 # Reset or ensure this is correctly handled if memory op depends on it
-        # current_country_prayed_list = prayed_for_data.get(item_country_code_from_form, []) # Example of getting the list
-        # (Original logic for finding item_to_put_back_from_memory and item_index_to_remove_from_memory would go here if it's essential)
-        # For now, we are focusing on the DB update being correct based on form values.
-
+                    if diagnostic_row:
+                        logging.info(f"[DIAGNOSTIC PG] Found existing record for {person_name} (PostLabel form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}): Status='{diagnostic_row['status']}', DB PostLabel='{diagnostic_row['post_label']}', ID='{diagnostic_row['id']}'")
+                    else:
+                        logging.warning(f"[DIAGNOSTIC PG] No record found for {person_name} (PostLabel form: '{post_label_form}', Queried as: {log_display_post_label}, Country: {item_country_code_from_form}).")
+            except psycopg2.Error as e_diag:
+                logging.error(f"[DIAGNOSTIC PG] PostgreSQL error: {e_diag}", exc_info=True)
+            except Exception as e_diag_generic:
+                logging.error(f"[DIAGNOSTIC PG] Generic error: {e_diag_generic}", exc_info=True)
+            finally:
+                if diag_conn: diag_conn.close()
+        # --- END OF DIAGNOSTIC BLOCK ---
 
         # Database operation
         db_conn = None
         updated_in_db = False
-        try:
-            db_conn = sqlite3.connect(DATABASE_URL)
-            db_conn.row_factory = sqlite3.Row # Important for fetching diagnostic_row details by name
-            cursor = db_conn.cursor()
-            new_status_timestamp = datetime.now()
+        if not DATABASE_URL:
+            logging.error("/put_back_in_queue: DATABASE_URL not set. Cannot perform DB operation.")
+        else:
+            try:
+                db_conn = get_db_conn()
+                with db_conn.cursor(cursor_factory=DictCursor) as cursor: # Ensure DictCursor for fetching item_to_update_details
+                    new_status_timestamp = datetime.now()
 
-            # Fetch the item first to check its current hex_id
-            # The diagnostic_row from earlier can be used if it's confirmed to be the correct item.
-            # For safety, re-fetch or ensure diagnostic_row is exactly the one to update.
-            # Assuming diagnostic_row (fetched above the try-finally) is the target item.
-            # Let's refine this to fetch within the transaction for safety.
-
-            current_hex_id = None
-            select_sql_for_put_back = "SELECT id, hex_id FROM prayer_candidates WHERE person_name = ? AND country_code = ? AND status = 'prayed'"
-            params_for_put_back = [person_name, item_country_code_from_form]
-            if is_post_label_null_in_db_query:
-                select_sql_for_put_back += " AND post_label IS NULL"
-            else:
-                select_sql_for_put_back += " AND post_label = ?"
-                params_for_put_back.append(query_post_label_value_for_db)
-
-            cursor.execute(select_sql_for_put_back, tuple(params_for_put_back))
-            item_to_update_details = cursor.fetchone()
-
-            if not item_to_update_details:
-                logging.warning(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} not found with status 'prayed' for put_back. No DB update made.")
-                updated_in_db = False
-            else:
-                current_hex_id = item_to_update_details['hex_id']
-                item_db_id = item_to_update_details['id']
-                hex_id_to_set = current_hex_id
-
-                random_allocation_countries = ['israel', 'iran']
-                if item_country_code_from_form in random_allocation_countries and not current_hex_id:
-                    logging.info(f"Item {person_name} in {item_country_code_from_form} has NULL hex_id. Attempting to assign one.")
-                    hex_map_gdf_put_back = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
-                    if hex_map_gdf_put_back is not None and not hex_map_gdf_put_back.empty and 'id' in hex_map_gdf_put_back.columns:
-                        all_map_hex_ids_pb = set(hex_map_gdf_put_back['id'].unique())
-
-                        # Fetch currently used hex_ids (prayed or queued) for this country
-                        cursor.execute("""
-                            SELECT hex_id FROM prayer_candidates
-                            WHERE country_code = ? AND hex_id IS NOT NULL AND id != ?
-                        """, (item_country_code_from_form, item_db_id)) # Exclude current item being processed
-                        used_hex_ids_rows_pb = cursor.fetchall()
-                        used_hex_ids_pb = {row['hex_id'] for row in used_hex_ids_rows_pb}
-
-                        available_hex_ids_pb = list(all_map_hex_ids_pb - used_hex_ids_pb)
-                        if available_hex_ids_pb:
-                            random.shuffle(available_hex_ids_pb)
-                            hex_id_to_set = available_hex_ids_pb.pop()
-                            logging.info(f"Assigned new hex_id {hex_id_to_set} to {person_name} during put_back.")
-                        else:
-                            logging.warning(f"No available hex_ids to assign to {person_name} in {item_country_code_from_form} during put_back.")
-                            # hex_id_to_set remains None if no hex can be assigned
+                    select_sql_for_put_back = "SELECT id, hex_id FROM prayer_candidates WHERE person_name = %s AND country_code = %s AND status = 'prayed'"
+                    params_for_put_back = [person_name, item_country_code_from_form]
+                    if is_post_label_null_in_db_query:
+                        select_sql_for_put_back += " AND post_label IS NULL"
                     else:
-                        logging.warning(f"Hex map data not available for {item_country_code_from_form} during put_back hex_id assignment.")
+                        select_sql_for_put_back += " AND post_label = %s"
+                        params_for_put_back.append(query_post_label_value_for_db)
 
-                # Now perform the update with potentially new hex_id
-                cursor.execute("""
-                    UPDATE prayer_candidates
-                    SET status = 'queued', status_timestamp = ?, hex_id = ?
-                    WHERE id = ?
-                """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), hex_id_to_set, item_db_id))
+                    cursor.execute(select_sql_for_put_back, tuple(params_for_put_back))
+                    item_to_update_details = cursor.fetchone()
 
-                if cursor.rowcount > 0:
-                    db_conn.commit()
-                    logging.info(f"Item {person_name} (ID: {item_db_id}, Post: {log_display_post_label}) for {item_country_code_from_form} status updated to 'queued', hex_id set to {hex_id_to_set}.")
-                    updated_in_db = True
-                else:
-                    # This case should ideally not be reached if item_to_update_details was found.
-                    db_conn.rollback()
-                    logging.error(f"Failed to update item {person_name} (ID: {item_db_id}) even after finding it. This should not happen.")
+                    if not item_to_update_details:
+                        logging.warning(f"Item {person_name} (Post: {log_display_post_label}) for {item_country_code_from_form} not found with status 'prayed' for put_back (PostgreSQL). No DB update made.")
+                        # updated_in_db remains False
+                    else:
+                        current_hex_id = item_to_update_details['hex_id']
+                        item_db_id = item_to_update_details['id']
+                        hex_id_to_set = current_hex_id
 
-        except sqlite3.Error as e:
-            logging.error(f"SQLite error in /put_back_in_queue when updating prayer_candidates for {person_name}: {e}")
-            if db_conn: db_conn.rollback()
-        finally:
-            if db_conn: db_conn.close()
+                        random_allocation_countries = ['israel', 'iran']
+                        if item_country_code_from_form in random_allocation_countries and not current_hex_id:
+                            logging.info(f"Item {person_name} in {item_country_code_from_form} has NULL hex_id. Attempting to assign one (PostgreSQL).")
+                            hex_map_gdf_put_back = HEX_MAP_DATA_STORE.get(item_country_code_from_form)
+                            if hex_map_gdf_put_back is not None and not hex_map_gdf_put_back.empty and 'id' in hex_map_gdf_put_back.columns:
+                                all_map_hex_ids_pb = set(hex_map_gdf_put_back['id'].unique())
+                                cursor.execute("""
+                                    SELECT hex_id FROM prayer_candidates
+                                    WHERE country_code = %s AND hex_id IS NOT NULL AND id != %s
+                                """, (item_country_code_from_form, item_db_id))
+                                used_hex_ids_pb = {row['hex_id'] for row in cursor.fetchall()}
+                                available_hex_ids_pb = list(all_map_hex_ids_pb - used_hex_ids_pb)
+                                if available_hex_ids_pb:
+                                    random.shuffle(available_hex_ids_pb)
+                                    hex_id_to_set = available_hex_ids_pb.pop()
+                                    logging.info(f"Assigned new hex_id {hex_id_to_set} to {person_name} during put_back (PostgreSQL).")
+                                else:
+                                    logging.warning(f"No available hex_ids to assign to {person_name} in {item_country_code_from_form} during put_back (PostgreSQL).")
+                            else:
+                                logging.warning(f"Hex map data not available for {item_country_code_from_form} during put_back hex_id assignment (PostgreSQL).")
+
+                        cursor.execute("""
+                            UPDATE prayer_candidates
+                            SET status = 'queued', status_timestamp = %s, hex_id = %s
+                            WHERE id = %s
+                        """, (new_status_timestamp.strftime('%Y-%m-%d %H:%M:%S'), hex_id_to_set, item_db_id))
+
+                        if cursor.rowcount > 0:
+                            db_conn.commit()
+                            logging.info(f"Item {person_name} (ID: {item_db_id}, Post: {log_display_post_label}) for {item_country_code_from_form} status updated to 'queued', hex_id set to {hex_id_to_set} (PostgreSQL).")
+                            updated_in_db = True
+                        else:
+                            db_conn.rollback() # Rollback if update failed
+                            logging.error(f"Failed to update item {person_name} (ID: {item_db_id}) (PostgreSQL). This should not happen if item was found.")
+
+            except psycopg2.Error as e:
+                logging.error(f"PostgreSQL error in /put_back_in_queue for {person_name}: {e}")
+                if db_conn: db_conn.rollback()
+            except Exception as e_gen: # Generic error catch
+                 logging.error(f"Unexpected error in /put_back_in_queue for {person_name}: {e_gen}", exc_info=True)
+                 if db_conn: db_conn.rollback() # Ensure rollback on generic errors too
+            finally:
+                if db_conn: db_conn.close()
 
         if updated_in_db:
             # Reload this country's prayed data from DB to update in-memory list
