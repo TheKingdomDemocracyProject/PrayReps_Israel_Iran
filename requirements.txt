@@ -6,3 +6,5 @@ requests
 geopandas
 matplotlib
 psycopg2-binary>=2.9 # Added for PostgreSQL support
+pytest
+pytest-flask
