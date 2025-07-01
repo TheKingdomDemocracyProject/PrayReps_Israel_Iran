@@ -266,11 +266,11 @@ def update_queue():
     logging.info("Update_queue function execution started.")
     conn = None
     if not DATABASE_URL:
-            logging.error("[update_queue] DATABASE_URL not set. Aborting queue update.")
-            return
-        try:
-            logging.info("[update_queue] Attempting to connect to PostgreSQL DB.")
-            conn = get_db_conn()
+        logging.error("[update_queue] DATABASE_URL not set. Aborting queue update.")
+        return
+    try: # This try block should be at the same indentation level as the 'if' block above it.
+        logging.info("[update_queue] Attempting to connect to PostgreSQL DB.")
+        conn = get_db_conn()
             with conn.cursor(cursor_factory=DictCursor) as cursor:
 
                 # PREEMPTIVELY DELETE EXISTING 'QUEUED' ITEMS
