@@ -2,9 +2,9 @@ import os
 import pandas as pd
 from flask import current_app # Can be used if app_instance is not passed to helpers
 
-# Import functions and data stores from the 'app.py' module (now acting as a utility library)
-# 'app.py' is in the parent directory of 'project'.
-from ..app import (
+# Import functions and data stores from 'app.py' (located in the parent directory, i.e., src/)
+# Gunicorn's working directory is typically the project root (src/), making 'app' a top-level module.
+from app import (
     init_db,
     load_prayed_for_data_from_db,
     update_queue,
