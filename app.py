@@ -195,10 +195,10 @@ def get_current_queue_items_from_db():
     """Fetches all items from the prayer_candidates table with status 'queued', for PostgreSQL."""
     items = []
     conn = None
-    if not DATABASE_URL:
+    if not DATABASE_URL:  # Ensure this line and below are consistently indented
         logging.error("DATABASE_URL not set, cannot fetch queue items.")
         return items
-    try:
+    try:  # This try should be at the same indentation level as the 'if not DATABASE_URL:' above
         conn = get_db_conn()
         with conn.cursor(cursor_factory=DictCursor) as cursor:
             cursor.execute("""
