@@ -13,7 +13,7 @@ class Config:
     # The primary source of DATABASE_URL for database functions is os.environ.get('DATABASE_URL') in app.py
     # This ensures app.config['DATABASE_URL'] is also correctly set.
     DATABASE_URL = os.environ.get('DATABASE_URL') or \
-                   os.path.join(PROJECT_ROOT, 'data', 'local_dev_queue.sqlite') # Fallback for local dev
+                   'sqlite:///' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'local_dev_queue.sqlite') # Fallback for local dev with sqlite:///
 
     # LOG_DIR should also be environment-aware or use a simpler default for non-Render environments
     # For Render, stdout/stderr is preferred. For local, a local path.
@@ -81,11 +81,20 @@ class ProductionConfig(Config):
     DEBUG = False
     # Add any production specific configs, e.g. logging level
 
+class TestingConfig(Config):
+    TESTING = True
+    # Use a file-based SQLite DB for tests to ensure persistence across contexts
+    DATABASE_URL = os.path.join(Config.PROJECT_ROOT, 'test_prayreps.db') # Raw file path
+    DEBUG = True # Often useful for tests to get more detailed error output
+    # Add any other test-specific overrides, e.g., disable CSRF, etc.
+
 # Helper to get config class based on environment variable
 def get_config():
     env = os.environ.get('FLASK_ENV', 'development')
     if env == 'production':
         return ProductionConfig
+    if env == 'testing':
+        return TestingConfig
     return DevelopmentConfig
 
 # Global config object that can be imported by the app

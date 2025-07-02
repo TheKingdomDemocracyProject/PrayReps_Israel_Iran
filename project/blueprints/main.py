@@ -21,7 +21,6 @@ from ..utils import format_pretty_timestamp
 # --- End Import Helper ---
 
 from hex_map import plot_hex_map_with_hearts # For the new route
-# from ...app import HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE, prayed_for_data, get_current_queue_items_from_db # Removed incorrect import
 
 
 bp = Blueprint('main', __name__)
