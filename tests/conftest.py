@@ -36,15 +36,26 @@ def app():
     assert cfg_obj == TestingConfig, f"get_config() returned {cfg_obj}, expected TestingConfig class"
 
     app_instance = create_app() # This will now use TestingConfig
-    print(f"CONFTTEST_FIXTURE_APP: app.config['DATABASE_URL'] after create_app: {app_instance.config['DATABASE_URL']}")
-    assert app_instance.config['DATABASE_URL'] == ':memory:', "App is not configured for in-memory SQLite"
+    print("CONFTTEST_FIXTURE_APP: DB connection type: <class 'sqlite3.Connection'>") # This will be printed by the assertion below now
+    # Assert that the DATABASE_URL is the file path defined in TestingConfig
+    expected_db_path_suffix = 'test_prayreps.db'
+    actual_db_url = app_instance.config['DATABASE_URL']
+    print(f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL from app.config: {actual_db_url}")
+    assert expected_db_path_suffix in actual_db_url, \
+        f"App is not configured for file-based SQLite DB. Expected '{expected_db_path_suffix}' in '{actual_db_url}'"
 
-    # Setup database schema for in-memory SQLite
+    # Ensure a clean state by deleting the test DB file if it exists
+    # The path needs to be extracted from the URI 'sqlite:///path/to/file'
+    db_file_path = actual_db_url.replace('sqlite:///', '')
+    if os.path.exists(db_file_path):
+        print(f"CONFTTEST_FIXTURE_APP: Removing existing test database: {db_file_path}")
+        os.remove(db_file_path)
+
+    # Setup database schema for file-based SQLite
     with app_instance.app_context():
-        # Using project.database.get_db() which should respect TestingConfig's :memory: SQLite
         from project.database import get_db, close_db
-        db = get_db()
-        print(f"CONFTTEST_FIXTURE_APP: DB connection type: {type(db)}")
+        db = get_db() # This will now connect to the file-based DB
+        print(f"CONFTTEST_FIXTURE_APP: DB connection type for file DB: {type(db)}")
 
         # SQLite-compatible DDL
         ddl_prayer_candidates = """

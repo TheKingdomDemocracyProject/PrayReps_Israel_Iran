@@ -83,7 +83,8 @@ class ProductionConfig(Config):
 
 class TestingConfig(Config):
     TESTING = True
-    DATABASE_URL = ':memory:' # Use in-memory SQLite for tests
+    # Use a file-based SQLite DB for tests to ensure persistence across contexts
+    DATABASE_URL = 'sqlite:///' + os.path.join(Config.PROJECT_ROOT, 'test_prayreps.db')
     DEBUG = True # Often useful for tests to get more detailed error output
     # Add any other test-specific overrides, e.g., disable CSRF, etc.
 
