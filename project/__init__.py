@@ -70,21 +70,28 @@ def create_app():
     # These are placeholders; their management will be refactored.
     app.hex_map_data_store = {}
     app.post_label_mappings_store = {}
+    # Initialize deputies_data for each country
     app.deputies_data = {
         country: {'with_images': [], 'without_images': []}
-        for country in app.config['COUNTRIES_CONFIG'].keys()
+        for country in app.config.get('COUNTRIES_CONFIG', {}).keys()
     }
-    # prayed_for_data will be loaded from DB by a service.
+    # Initialize prayed_for_data for each country
+    app.prayed_for_data = {
+        country: []
+        for country in app.config.get('COUNTRIES_CONFIG', {}).keys()
+    }
+    # Note: app.config['COUNTRIES_CONFIG'] is loaded from project.config which imports from project.app_config
 
     # Initialize database and load initial data
     # This needs to be done within app_context
     with app.app_context():
-        from . import database
-        database.init_app(app) # For potential CLI commands like init-db
+        # from . import database # Removed SQLite specific init
+        # database.init_app(app) # Removed SQLite specific init
 
         # The original `initialize_app_data` logic will be refactored
         # into a data_loader or service, and called here.
         # For now, let's placeholder this.
+        # PostgreSQL init_db() is called within initialize_application
         from . import data_initializer # This will be a new module
         data_initializer.initialize_application(app)
         app.logger.info("Application data initialization complete.")
