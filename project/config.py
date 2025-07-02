@@ -58,8 +58,9 @@ class ProductionConfig(Config):
 
 class TestingConfig(Config):
     TESTING = True
-    # Use a file-based SQLite DB for tests to ensure persistence across contexts
-    DATABASE_URL = os.path.join(Config.PROJECT_ROOT, 'test_prayreps.db') # Raw file path
+    # For mocked DB tests, the actual value is less critical, but make it clear.
+    # If some code still tries to parse it, a valid URI format might be useful.
+    DATABASE_URL = 'postgresql://mocked_user:mocked_pass@mocked_host:5432/mocked_db'
     DEBUG = True # Often useful for tests to get more detailed error output
     # Add any other test-specific overrides, e.g., disable CSRF, etc.
 
