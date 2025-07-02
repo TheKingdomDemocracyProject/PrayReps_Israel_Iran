@@ -79,12 +79,13 @@ def create_app():
     # Initialize database and load initial data
     # This needs to be done within app_context
     with app.app_context():
-        from . import database
-        database.init_app(app) # For potential CLI commands like init-db
+        # from . import database # Removed SQLite specific init
+        # database.init_app(app) # Removed SQLite specific init
 
         # The original `initialize_app_data` logic will be refactored
         # into a data_loader or service, and called here.
         # For now, let's placeholder this.
+        # PostgreSQL init_db() is called within initialize_application
         from . import data_initializer # This will be a new module
         data_initializer.initialize_application(app)
         app.logger.info("Application data initialization complete.")
