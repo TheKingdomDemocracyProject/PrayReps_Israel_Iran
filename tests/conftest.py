@@ -33,7 +33,7 @@ def app():
     # Verify get_config() behavior
     cfg_obj = get_config()
     print(f"CONFTTEST_FIXTURE_APP: get_config() returned type: {type(cfg_obj)}")
-    assert isinstance(cfg_obj, TestingConfig), "get_config() did not return TestingConfig"
+    assert cfg_obj == TestingConfig, f"get_config() returned {cfg_obj}, expected TestingConfig class"
 
     app_instance = create_app() # This will now use TestingConfig
     print(f"CONFTTEST_FIXTURE_APP: app.config['DATABASE_URL'] after create_app: {app_instance.config['DATABASE_URL']}")
