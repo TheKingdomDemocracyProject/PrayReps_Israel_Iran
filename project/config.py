@@ -83,7 +83,7 @@ class ProductionConfig(Config):
 
 class TestingConfig(Config):
     TESTING = True
-    DATABASE_URL = 'sqlite:///:memory:' # Use in-memory SQLite for tests
+    DATABASE_URL = ':memory:' # Use in-memory SQLite for tests
     DEBUG = True # Often useful for tests to get more detailed error output
     # Add any other test-specific overrides, e.g., disable CSRF, etc.
 
