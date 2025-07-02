@@ -6,15 +6,9 @@ import random
 import psycopg2 # For PostgreSQL
 from psycopg2.extras import DictCursor # To fetch rows as dictionaries
 
-# Import PostgreSQL connection utilities from root app.py
-# These might ideally be in a shared db_utils module later
-from ...app import get_db_conn, DATABASE_URL
-# Import global data stores/configs if needed directly, or access via current_app.config
-# For example, if COUNTRIES_CONFIG from app.py is needed:
-from ...app import COUNTRIES_CONFIG as APP_COUNTRIES_CONFIG
-# Accessing hex_map_data_store directly from app.py is not ideal.
-# It's better if it's passed or accessed via current_app if populated there by data_initializer.
-# For now, let's assume current_app.hex_map_data_store is populated as seen in blueprints.
+# Import from new utility modules within the 'project' package
+from ..db_utils import get_db_conn, DATABASE_URL
+from ..app_config import COUNTRIES_CONFIG # Using this directly for service logic if appropriate
 
 # --- Data Fetching and Processing (from original app.py, to be adapted) ---
 

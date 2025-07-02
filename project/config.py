@@ -1,76 +1,51 @@
 import os
+# Import static configurations from project.app_config
+from .app_config import (
+    APP_ROOT as PROJECT_APP_ROOT, # Renaming to avoid clash if Config defines its own APP_ROOT
+    APP_DATA_DIR as PROJECT_APP_DATA_DIR, # Renaming
+    COUNTRIES_CONFIG as APP_DEFINED_COUNTRIES_CONFIG,
+    party_info as APP_DEFINED_PARTY_INFO, # Corrected case for party_info
+    HEART_IMG_PATH as APP_DEFINED_HEART_IMG_PATH
+)
 
 class Config:
     """Base configuration."""
     SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24))
 
-    # Determine APP_ROOT (project directory) and PROJECT_ROOT (one level up)
-    # This assumes config.py is inside the 'project' directory.
-    APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-    PROJECT_ROOT = os.path.dirname(APP_ROOT)
+    # PROJECT_ROOT is the directory containing the 'project' package (e.g., src/)
+    # This is consistent with PROJECT_APP_ROOT from app_config.py
+    PROJECT_ROOT = PROJECT_APP_ROOT
 
     # DATABASE_URL for PostgreSQL on Render, with a fallback to local SQLite path for development if not set
-    # The primary source of DATABASE_URL for database functions is os.environ.get('DATABASE_URL') in app.py
-    # This ensures app.config['DATABASE_URL'] is also correctly set.
-    DATABASE_URL = os.environ.get('DATABASE_URL') or \
-                   'sqlite:///' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'local_dev_queue.sqlite') # Fallback for local dev with sqlite:///
+    # The primary source of DATABASE_URL for database functions is now project.db_utils.DATABASE_URL
+    # This app.config['DATABASE_URL'] is for Flask's knowledge, and for tests.
+    # For testing, this will be overridden by TestingConfig.
+    # For dev, if DATABASE_URL env var is not set, it defaults to a local SQLite file.
+    # Note: The path construction for default SQLite DB needs to use PROJECT_ROOT.
+    _default_sqlite_path = 'sqlite:///' + os.path.join(PROJECT_ROOT, 'data', 'local_dev_queue.sqlite')
+    DATABASE_URL = os.environ.get('DATABASE_URL') or _default_sqlite_path
 
-    # LOG_DIR should also be environment-aware or use a simpler default for non-Render environments
-    # For Render, stdout/stderr is preferred. For local, a local path.
-    # The logging in create_app already uses app.config['LOG_DIR']
-    # If app.py's LOG_DIR_APP is the main one for file logging, ensure consistency or remove one.
-    # For file logging, use a consistent local path. Render will capture stdout/stderr.
-    LOG_DIR = os.path.join(PROJECT_ROOT, 'logs_project_cfg') # For logs configured by create_app
+    # LOG_DIR uses PROJECT_ROOT.
+    LOG_DIR = os.path.join(PROJECT_ROOT, 'logs_project_cfg')
 
-    DATA_DIR = os.path.join(PROJECT_ROOT, 'data') # For CSVs, GeoJSONs
+    # DATA_DIR from app_config is PROJECT_APP_DATA_DIR
+    DATA_DIR = PROJECT_APP_DATA_DIR
 
     # Static and Template folders are relative to PROJECT_ROOT
     STATIC_FOLDER = os.path.join(PROJECT_ROOT, 'static')
     TEMPLATE_FOLDER = os.path.join(PROJECT_ROOT, 'templates')
 
-    # Application specific configurations
-    COUNTRIES_CONFIG = {
-        'israel': {
-            'csv_path': os.path.join(DATA_DIR, '20221101_israel.csv'),
-            'geojson_path': os.path.join(DATA_DIR, 'ISR_Parliament_120.geojson'),
-            'map_shape_path': os.path.join(DATA_DIR, 'ISR_Parliament_120.geojson'),
-            'post_label_mapping_path': None, # Not used for random allocation
-            'total_representatives': 120,
-            'name': 'Israel',
-            'flag': '🇮🇱'
-        },
-        'iran': {
-            'csv_path': os.path.join(DATA_DIR, '20240510_iran.csv'),
-            'geojson_path': os.path.join(DATA_DIR, 'IRN_IslamicParliamentofIran_290_v2.geojson'),
-            'map_shape_path': os.path.join(DATA_DIR, 'IRN_IslamicParliamentofIran_290_v2.geojson'),
-            'post_label_mapping_path': None, # Not used for random allocation
-            'total_representatives': 290,
-            'name': 'Iran',
-            'flag': '🇮🇷'
-        }
-    }
+    # Application specific configurations imported from project.app_config
+    COUNTRIES_CONFIG = APP_DEFINED_COUNTRIES_CONFIG
+    PARTY_INFO = APP_DEFINED_PARTY_INFO
 
-    PARTY_INFO = {
-        'israel': {
-            'Likud': {'short_name': 'Likud', 'color': '#00387A'},
-            'Yesh Atid': {'short_name': 'Yesh Atid', 'color': '#ADD8E6'},
-            'Shas': {'short_name': 'Shas', 'color': '#FFFF00'},
-            'Resilience': {'short_name': 'Resilience', 'color': '#0000FF'},
-            'Labor': {'short_name': 'Labor', 'color': '#FF0000'},
-            'Other': {'short_name': 'Other', 'color': '#CCCCCC'}
-        },
-        'iran': {
-            'Principlist': {'short_name': 'Principlist', 'color': '#006400'},
-            'Reformists': {'short_name': 'Reformists', 'color': '#90EE90'},
-            'Independent': {'short_name': 'Independent', 'color': '#808080'},
-            'Other': {'short_name': 'Other', 'color': '#CCCCCC'}
-        },
-    }
-
-    # Path for the heart image used in map plotting (relative to static folder)
-    # The full path will be constructed as os.path.join(STATIC_FOLDER, HEART_IMG_PATH_RELATIVE)
-    # However, for templates, it's often easier to use url_for, so this might be just for backend use.
-    HEART_IMG_PATH_RELATIVE = 'heart_icons/heart_red.png'
+    # HEART_IMG_PATH_RELATIVE is used for templates with url_for.
+    # APP_DEFINED_HEART_IMG_PATH is 'static/heart_icons/heart_red.png'
+    # We need the part relative to static folder for url_for.
+    if APP_DEFINED_HEART_IMG_PATH.startswith('static/'):
+        HEART_IMG_PATH_RELATIVE = APP_DEFINED_HEART_IMG_PATH[len('static/'):]
+    else:
+        HEART_IMG_PATH_RELATIVE = APP_DEFINED_HEART_IMG_PATH
 
 
 class DevelopmentConfig(Config):

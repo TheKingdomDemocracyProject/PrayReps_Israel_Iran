@@ -70,11 +70,17 @@ def create_app():
     # These are placeholders; their management will be refactored.
     app.hex_map_data_store = {}
     app.post_label_mappings_store = {}
+    # Initialize deputies_data for each country
     app.deputies_data = {
         country: {'with_images': [], 'without_images': []}
-        for country in app.config['COUNTRIES_CONFIG'].keys()
+        for country in app.config.get('COUNTRIES_CONFIG', {}).keys()
     }
-    # prayed_for_data will be loaded from DB by a service.
+    # Initialize prayed_for_data for each country
+    app.prayed_for_data = {
+        country: []
+        for country in app.config.get('COUNTRIES_CONFIG', {}).keys()
+    }
+    # Note: app.config['COUNTRIES_CONFIG'] is loaded from project.config which imports from project.app_config
 
     # Initialize database and load initial data
     # This needs to be done within app_context
