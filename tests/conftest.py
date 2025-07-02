@@ -17,84 +17,70 @@ print(f"CONFTTEST_SYSPATH: Full sys.path now: {sys.path}")
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch): # Add monkeypatch as an argument
     print("CONFTTEST_FIXTURE_APP: app() fixture called.")
 
-    # Set FLASK_ENV to 'testing' before creating the app
-    # This ensures create_app() picks up TestingConfig
     os.environ['FLASK_ENV'] = 'testing'
     print("CONFTTEST_FIXTURE_APP: FLASK_ENV set to 'testing'.")
 
-    print("CONFTTEST_FIXTURE_APP: Attempting 'from project import create_app' INSIDE fixture.")
+    from project.config import TestingConfig
+    # This is app.config['DATABASE_URL'] which is 'postgresql://mocked...'
+    # project.db_utils.DATABASE_URL will also pick this up from env var if we set it.
+    test_db_url_for_env = TestingConfig.DATABASE_URL
+
+    original_db_url_env = os.environ.get('DATABASE_URL')
+    os.environ['DATABASE_URL'] = test_db_url_for_env
+    print(f"CONFTTEST_FIXTURE_APP: Set os.environ['DATABASE_URL'] to: {test_db_url_for_env}")
+
+    # Apply monkeypatches BEFORE create_app() is called
+    from tests.mocks import db_mocks
+
+    monkeypatch.setattr('project.db_utils.get_db_conn', db_mocks.get_mock_db_conn)
+    print("CONFTTEST_FIXTURE_APP: Patched 'project.db_utils.get_db_conn' with mock.")
+
+    monkeypatch.setattr('app.init_db', db_mocks.mock_init_db) # Patches init_db in app.py module
+    print("CONFTTEST_FIXTURE_APP: Patched 'app.init_db' (from root app.py module) with mock.")
+
+    # Also mock other app.py functions that data_initializer calls and that interact with DB
+    # to prevent them from running with a mock connection that might not return expected data for their logic.
+    # For app creation, it's often enough that they don't raise errors.
+    def mock_load_prayed_from_db():
+        print("Mocked app.load_prayed_for_data_from_db called.")
+        # current_app.prayed_for_data should already be initialized as {} by create_app
+        pass # Does not attempt to load from DB
+    monkeypatch.setattr('app.load_prayed_for_data_from_db', mock_load_prayed_from_db)
+    print("CONFTTEST_FIXTURE_APP: Patched 'app.load_prayed_for_data_from_db' with mock.")
+
+    def mock_update_queue():
+        print("Mocked app.update_queue called.")
+        # This function is complex; for app creation test, just ensure it doesn't error.
+        # It uses current_app.hex_map_data_store, which should be {}
+        pass
+    monkeypatch.setattr('app.update_queue', mock_update_queue)
+    print("CONFTTEST_FIXTURE_APP: Patched 'app.update_queue' with mock.")
+
+
+    print("CONFTTEST_FIXTURE_APP: Attempting 'from project import create_app' (after patching).")
     from project import create_app
-    from project.config import get_config, TestingConfig # For verification
-    print("CONFTTEST_FIXTURE_APP: Successfully imported 'create_app' and config utils from 'project'.")
+    app_instance = create_app()
 
-    # Verify get_config() behavior
-    cfg_obj = get_config()
-    print(f"CONFTTEST_FIXTURE_APP: get_config() returned type: {type(cfg_obj)}")
-    assert cfg_obj == TestingConfig, f"get_config() returned {cfg_obj}, expected TestingConfig class"
+    # Restore original DATABASE_URL in environment
+    if original_db_url_env is None:
+        if 'DATABASE_URL' in os.environ: del os.environ['DATABASE_URL']
+    else:
+        os.environ['DATABASE_URL'] = original_db_url_env
+    print(f"CONFTTEST_FIXTURE_APP: Restored os.environ['DATABASE_URL'] (if any).")
 
-    app_instance = create_app() # This will now use TestingConfig
-    print("CONFTTEST_FIXTURE_APP: DB connection type: <class 'sqlite3.Connection'>") # This will be printed by the assertion below now
-    # Assert that the DATABASE_URL is the file path defined in TestingConfig
-    expected_db_filename = 'test_prayreps.db'
-    actual_db_path = app_instance.config['DATABASE_URL'] # This is now the raw path
-    print(f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL (path) from app.config: {actual_db_path}")
-    assert expected_db_filename in actual_db_path, \
-        f"App is not configured for file-based SQLite DB. Expected filename '{expected_db_filename}' in path '{actual_db_path}'"
-    assert "sqlite:///" not in actual_db_path, "DATABASE_URL should be a raw path, not a URI for testing with sqlite3.connect"
-
-
-    # Ensure a clean state by deleting the test DB file if it exists
-    db_file_path = actual_db_path # Already the raw path
-    if os.path.exists(db_file_path):
-        print(f"CONFTTEST_FIXTURE_APP: Removing existing test database: {db_file_path}")
-        os.remove(db_file_path)
-
-    # Setup database schema for file-based SQLite
-    with app_instance.app_context():
-        from project.database import get_db, close_db
-        db = get_db() # This will now connect to the file-based DB
-        print(f"CONFTTEST_FIXTURE_APP: DB connection type for file DB: {type(db)}")
-
-        # SQLite-compatible DDL
-        ddl_prayer_candidates = """
-        CREATE TABLE prayer_candidates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_name TEXT NOT NULL,
-            post_label TEXT,
-            country_code TEXT NOT NULL,
-            party TEXT,
-            thumbnail TEXT,
-            status TEXT NOT NULL,
-            status_timestamp TEXT NOT NULL,
-            initial_add_timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-            hex_id TEXT
-        );
-        """
-        ddl_unique_index = """
-        CREATE UNIQUE INDEX idx_candidates_unique
-        ON prayer_candidates (person_name, post_label, country_code);
-        """
-        try:
-            print("CONFTTEST_FIXTURE_APP: Executing DDL for prayer_candidates table.")
-            db.executescript(ddl_prayer_candidates)
-            print("CONFTTEST_FIXTURE_APP: prayer_candidates table created.")
-            print("CONFTTEST_FIXTURE_APP: Executing DDL for idx_candidates_unique index.")
-            db.executescript(ddl_unique_index)
-            print("CONFTTEST_FIXTURE_APP: idx_candidates_unique index created.")
-            db.commit()
-            print("CONFTTEST_FIXTURE_APP: DB schema committed.")
-        except Exception as e:
-            print(f"CONFTTEST_FIXTURE_APP: Error creating schema: {e}")
-            raise
+    print(f"CONFTTEST_FIXTURE_APP: app.config['DATABASE_URL'] is: {app_instance.config['DATABASE_URL']}")
+    expected_mock_db_url_part = 'mocked_db'
+    actual_app_config_db_url = app_instance.config['DATABASE_URL']
+    print(f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL from app.config: {actual_app_config_db_url}")
+    assert expected_mock_db_url_part in actual_app_config_db_url, \
+        f"App.config['DATABASE_URL'] not using mocked URL. Expected '{expected_mock_db_url_part}' in path '{actual_app_config_db_url}'"
 
     yield app_instance
 
-    with app_instance.app_context():
-        close_db()
-        print("CONFTTEST_FIXTURE_APP: DB connection closed after test.")
+    print("CONFTTEST_FIXTURE_APP: Mocked app fixture teardown.")
 
 @pytest.fixture
 def client(app):
