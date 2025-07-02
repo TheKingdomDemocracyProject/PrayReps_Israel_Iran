@@ -3,6 +3,7 @@ print("CONFTTEST_TOP: Conftest.py is being loaded.")
 import sys
 import os
 import pytest # Moved pytest import higher
+import sqlite3 # Import sqlite3 for manual DDL execution
 
 # Add the project root directory to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
