@@ -84,7 +84,7 @@ class ProductionConfig(Config):
 class TestingConfig(Config):
     TESTING = True
     # Use a file-based SQLite DB for tests to ensure persistence across contexts
-    DATABASE_URL = 'sqlite:///' + os.path.join(Config.PROJECT_ROOT, 'test_prayreps.db')
+    DATABASE_URL = os.path.join(Config.PROJECT_ROOT, 'test_prayreps.db') # Raw file path
     DEBUG = True # Often useful for tests to get more detailed error output
     # Add any other test-specific overrides, e.g., disable CSRF, etc.
 

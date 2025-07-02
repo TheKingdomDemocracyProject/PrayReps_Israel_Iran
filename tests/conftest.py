@@ -38,15 +38,16 @@ def app():
     app_instance = create_app() # This will now use TestingConfig
     print("CONFTTEST_FIXTURE_APP: DB connection type: <class 'sqlite3.Connection'>") # This will be printed by the assertion below now
     # Assert that the DATABASE_URL is the file path defined in TestingConfig
-    expected_db_path_suffix = 'test_prayreps.db'
-    actual_db_url = app_instance.config['DATABASE_URL']
-    print(f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL from app.config: {actual_db_url}")
-    assert expected_db_path_suffix in actual_db_url, \
-        f"App is not configured for file-based SQLite DB. Expected '{expected_db_path_suffix}' in '{actual_db_url}'"
+    expected_db_filename = 'test_prayreps.db'
+    actual_db_path = app_instance.config['DATABASE_URL'] # This is now the raw path
+    print(f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL (path) from app.config: {actual_db_path}")
+    assert expected_db_filename in actual_db_path, \
+        f"App is not configured for file-based SQLite DB. Expected filename '{expected_db_filename}' in path '{actual_db_path}'"
+    assert "sqlite:///" not in actual_db_path, "DATABASE_URL should be a raw path, not a URI for testing with sqlite3.connect"
+
 
     # Ensure a clean state by deleting the test DB file if it exists
-    # The path needs to be extracted from the URI 'sqlite:///path/to/file'
-    db_file_path = actual_db_url.replace('sqlite:///', '')
+    db_file_path = actual_db_path # Already the raw path
     if os.path.exists(db_file_path):
         print(f"CONFTTEST_FIXTURE_APP: Removing existing test database: {db_file_path}")
         os.remove(db_file_path)
