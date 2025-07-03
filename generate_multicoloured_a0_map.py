@@ -3,11 +3,11 @@ import pandas as pd
 import matplotlib
 
 matplotlib.use("Agg")  # Use Agg backend for Matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.offsetbox import AnnotationBbox, OffsetImage
-from PIL import Image
-import os
-import random
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage  # noqa: E402
+from PIL import Image  # noqa: E402
+import os  # noqa: E402
+import random  # noqa: E402
 
 
 # Load hex map
@@ -44,8 +44,9 @@ def plot_hex_map_with_hearts(
     ax.set_axis_off()  # Hide the axis
 
     # Find the bounds of the hex map
-    bounds = hex_map.geometry.total_bounds  # Returns (minx, miny, maxx, maxy)
-    padding = 0.1
+    # Returns (minx, miny, maxx, maxy)
+    bounds = hex_map.geometry.total_bounds
+    # padding = 0.1 # F841: local variable 'padding' is assigned to but never used
     ax.set_xlim(bounds[0], bounds[2])
     ax.set_ylim(bounds[1], bounds[3])
     ax.set_aspect("equal")  # Set aspect ratio to be equal
@@ -70,18 +71,18 @@ def plot_hex_map_with_hearts(
                 ab = AnnotationBbox(imagebox, (centroid.x, centroid.y), frameon=False)
                 ax.add_artist(ab)
 
+    # Save the plot as an image in the specified directory with tight bounding box
     plt.savefig(
         output_path, bbox_inches="tight"
-    )  # Save the plot as an image in the specified directory with tight bounding box
+    )
     plt.close(fig)  # Close the plot to free memory
 
 
 if __name__ == "__main__":
     hex_map_path = "data/20241105_usa_esri_v2.shp"
     post_label_mapping_path = "data/post_label to 3CODE.csv"
-    heart_dir = (
-        "static/heart_icons"  # Directory containing different colored heart PNGs
-    )
+    # Directory containing different colored heart PNGs
+    heart_dir = "static/heart_icons"
     output_path = "output/A0_prayer_map.png"
     dpi = 300  # Set high DPI for print quality
 

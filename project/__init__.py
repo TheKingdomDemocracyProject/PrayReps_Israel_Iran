@@ -42,14 +42,17 @@ def create_app():
     log_file = os.path.join(app.config["LOG_DIR"], "app.log")
 
     # Basic logging setup
-    # For production, consider more robust logging (e.g., Gunicorn logging, structured logging)
+    # For production, consider more robust logging (e.g., Gunicorn logging,
+    # structured logging)
     if not app.debug:  # More restrictive logging in production
-        file_handler = RotatingFileHandler(log_file, maxBytes=10240, backupCount=10)
-        file_handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]"
-            )
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=10240, backupCount=10
         )
+        log_format = (
+            "%(asctime)s %(levelname)s: %(message)s "
+            "[in %(pathname)s:%(lineno)d]"
+        )
+        file_handler.setFormatter(logging.Formatter(log_format))
         file_handler.setLevel(logging.INFO)
         app.logger.addHandler(file_handler)
 
@@ -70,7 +73,8 @@ def create_app():
 
     app.logger.setLevel(logging.DEBUG if app.debug else logging.INFO)
     app.logger.info("PrayReps application starting up...")
-    app.logger.info(f"Flask Environment: {os.environ.get('FLASK_ENV', 'development')}")
+    flask_env = os.environ.get('FLASK_ENV', 'development')
+    app.logger.info(f"Flask Environment: {flask_env}")
     app.logger.info(f"Database URL: {app.config['DATABASE_URL']}")
     app.logger.info(f"Static folder: {app.static_folder}")
     app.logger.info(f"Template folder: {app.template_folder}")
@@ -80,15 +84,17 @@ def create_app():
     app.hex_map_data_store = {}
     app.post_label_mappings_store = {}
     # Initialize deputies_data for each country
+    countries_keys = app.config.get("COUNTRIES_CONFIG", {}).keys()
     app.deputies_data = {
         country: {"with_images": [], "without_images": []}
-        for country in app.config.get("COUNTRIES_CONFIG", {}).keys()
+        for country in countries_keys
     }
     # Initialize prayed_for_data for each country
     app.prayed_for_data = {
-        country: [] for country in app.config.get("COUNTRIES_CONFIG", {}).keys()
+        country: [] for country in countries_keys
     }
-    # Note: app.config['COUNTRIES_CONFIG'] is loaded from project.config which imports from project.app_config
+    # Note: app.config['COUNTRIES_CONFIG'] is loaded from project.config
+    # which imports from project.app_config
 
     # Initialize database and load initial data
     # This needs to be done within app_context

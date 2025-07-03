@@ -1,25 +1,20 @@
 # Standard library imports
 import logging
 from datetime import datetime
-import json
 import os
 import random
-import sys
 
 # Third-party imports
 import numpy as np
 import pandas as pd
 import psycopg2
 from psycopg2.extras import DictCursor
-from flask import Flask, current_app  # current_app added for accessing app context data
+from flask import current_app
 
+# current_app added for accessing app context data
 # Local application imports
-from hex_map import (
-    load_hex_map,
-    load_post_label_mapping,
-    plot_hex_map_with_hearts,
-)  # Assuming these are in src/
-from utils import format_pretty_timestamp  # Assuming this is in src/
+# Assuming these are in src/
+# Assuming this is in src/
 
 # Imports from project package
 from project.db_utils import (
@@ -31,7 +26,6 @@ from project.app_config import (
     APP_DATA_DIR,
     COUNTRIES_CONFIG,
     HEART_IMG_PATH,
-    party_info,  # party_info might not be used directly in app.py funcs
 )
 
 
@@ -47,19 +41,28 @@ log_file_path_app_direct = os.path.join(APP_ROOT, "logs_app", "app_direct.log")
 os.makedirs(os.path.dirname(log_file_path_app_direct), exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s (app.py direct)",
-    handlers=[logging.FileHandler(log_file_path_app_direct), logging.StreamHandler()],
+    format=(
+        "%(asctime)s - %(levelname)s - %(message)s (app.py direct)"
+    ),
+    handlers=[
+        logging.FileHandler(log_file_path_app_direct),
+        logging.StreamHandler(),
+    ],
 )
 
 logging.info(f"app.py: APP_ROOT imported as: {APP_ROOT}")
 logging.info(f"app.py: APP_DATA_DIR imported as: {APP_DATA_DIR}")
 # DATABASE_URL is imported from db_utils, so its check/logging is there.
-# logging.info(f"DATABASE_URL (from project.db_utils): {'********' if DATABASE_URL else 'NOT SET'}")
+# logging.info(
+# f"DATABASE_URL (from project.db_utils): "
+#    f"{'********' if DATABASE_URL else 'NOT SET'}"
+# )
 
 
-# Global data structures previously here (prayed_for_data, deputies_data, HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE)
-# are now initialized on the Flask app instance in project/__init__.py (create_app).
-# Functions in this module will access them via current_app.
+# Global data structures previously here (prayed_for_data, deputies_data,
+# HEX_MAP_DATA_STORE, POST_LABEL_MAPPINGS_STORE) are now initialized on the
+# Flask app instance in project/__init__.py (create_app). Functions in this
+# module will access them via current_app.
 
 
 def init_db():
@@ -94,14 +97,18 @@ def init_db():
             """
             )
             logging.info(
-                "app.py: Ensured idx_candidates_unique index exists on prayer_candidates table."
+                "app.py: Ensured idx_candidates_unique index exists on "
+                "prayer_candidates table."
             )
             conn.commit()
             logging.info(
-                "app.py: Successfully initialized PostgreSQL database tables and indexes."
+                "app.py: Successfully initialized PostgreSQL database tables "
+                "and indexes."
             )
     except psycopg2.Error as e:
-        logging.error(f"app.py: Error initializing PostgreSQL database: {e}")
+        logging.error(
+            f"app.py: Error initializing PostgreSQL database: {e}"
+        )
         if conn:
             conn.rollback()
     except ValueError as ve:  # Catch DATABASE_URL not configured from get_db_conn
@@ -133,15 +140,18 @@ def get_current_queue_items_from_db():
             rows = cursor.fetchall()
             items = [dict(row) for row in rows]
             logging.info(
-                f"app.py: Fetched {len(items)} 'queued' items from prayer_candidates (PostgreSQL)."
+                f"app.py: Fetched {len(items)} 'queued' items from "
+                f"prayer_candidates (PostgreSQL)."
             )
     except psycopg2.Error as e:
         logging.error(
-            f"app.py: PostgreSQL error in get_current_queue_items_from_db: {e}"
+            f"app.py: PostgreSQL error in "
+            f"get_current_queue_items_from_db: {e}"
         )
     except Exception as e_gen:
         logging.error(
-            f"app.py: Unexpected error in get_current_queue_items_from_db: {e_gen}",
+            f"app.py: Unexpected error in "
+            f"get_current_queue_items_from_db: {e_gen}",
             exc_info=True,
         )
     finally:
@@ -172,18 +182,18 @@ def process_deputies(csv_data, country_code):
     # COUNTRIES_CONFIG is used via import.
     country_deputies_with_images = []
     country_deputies_without_images = []
-    for _index, row in csv_data.iterrows():  # _index to denote unused loop variable
+    for _index, row in csv_data.iterrows():  # _index unused
         image_url = row.get("image_url")
         processed_row = row.to_dict()
         if not image_url:
             country_deputies_without_images.append(processed_row)
             continue
-        processed_row["Image"] = (
-            image_url  # Retaining 'Image' key as per original logic
-        )
+        # Retaining 'Image' key as per original logic
+        processed_row["Image"] = image_url
         country_deputies_with_images.append(processed_row)
         logging.debug(
-            f"app.py: Image URL assigned for {row.get('person_name')} ({country_code}): {image_url}"
+            f"app.py: Image URL assigned for {row.get('person_name')} "
+            f"({country_code}): {image_url}"
         )
 
     # Access deputies_data via current_app
@@ -199,8 +209,12 @@ def process_deputies(csv_data, country_code):
     app_deputies_data[country_code]["without_images"] = country_deputies_without_images
 
     if country_deputies_without_images:
+        names_without_images = ", ".join(
+            [dep.get("person_name", "N/A") for dep in country_deputies_without_images]
+        )
         logging.info(
-            f"app.py: No images found for the following names in {country_code}: {', '.join([dep.get('person_name', 'N/A') for dep in country_deputies_without_images])}"
+            f"app.py: No images found for the following names in "
+            f"{country_code}: {names_without_images}"
         )
 
 
@@ -224,19 +238,24 @@ def update_queue():
     current_hex_map_store = current_app.hex_map_data_store
 
     try:
-        logging.info("app.py: [update_queue] Attempting to connect to PostgreSQL DB.")
+        logging.info(
+            "app.py: [update_queue] Attempting to connect to PostgreSQL DB."
+        )
         conn = get_db_conn()  # From project.db_utils
         with conn.cursor(cursor_factory=DictCursor) as cursor:
             logging.info(
-                "app.py: [update_queue] Deleting existing 'queued' items from prayer_candidates table."
+                "app.py: [update_queue] Deleting existing 'queued' items from "
+                "prayer_candidates table."
             )
             cursor.execute("DELETE FROM prayer_candidates WHERE status = 'queued'")
             logging.info(
-                f"app.py: [update_queue] Deleted {cursor.rowcount} existing 'queued' items."
+                f"app.py: [update_queue] Deleted {cursor.rowcount} existing "
+                f"'queued' items."
             )
 
             cursor.execute(
-                "SELECT person_name, post_label, country_code FROM prayer_candidates WHERE status = 'prayed'"
+                "SELECT person_name, post_label, country_code "
+                "FROM prayer_candidates WHERE status = 'prayed'"
             )
             already_prayed_records = cursor.fetchall()
             already_prayed_ids = set()
@@ -246,7 +265,8 @@ def update_queue():
                 cc = record["country_code"]
                 already_prayed_ids.add((pn, pl, cc))
             logging.info(
-                f"app.py: [update_queue] Found {len(already_prayed_ids)} individuals already marked as 'prayed'."
+                f"app.py: [update_queue] Found {len(already_prayed_ids)} "
+                f"individuals already marked as 'prayed'."
             )
 
             all_potential_candidates = []
@@ -271,7 +291,8 @@ def update_queue():
                     )
                 ).reset_index(drop=True)
                 logging.info(
-                    f"app.py: Selected {len(df_sampled)} individuals from {country_code_collect} CSV (before filtering prayed)."
+                    f"app.py: Selected {len(df_sampled)} individuals from "
+                    f"{country_code_collect} CSV (before filtering prayed)."
                 )
 
                 for _index, row in df_sampled.iterrows():  # _index for unused variable
@@ -308,11 +329,12 @@ def update_queue():
                                 image_url if image_url else HEART_IMG_PATH
                             )
                             all_potential_candidates.append(item)
-                        # else: logging.debug(...) # Original debug log removed for brevity
-                    # else: logging.debug(...) # Original debug log removed for brevity
+                        # else: logging.debug(...) # Original log removed
+                    # else: logging.debug(...) # Original log removed
 
             logging.info(
-                f"app.py: [update_queue] Collected {len(all_potential_candidates)} new potential candidates."
+                f"app.py: [update_queue] Collected "
+                f"{len(all_potential_candidates)} new potential candidates."
             )
             random.shuffle(all_potential_candidates)
 
@@ -336,18 +358,29 @@ def update_queue():
                 ):
                     all_map_hex_ids = set(hex_map_gdf_prep["id"].unique())
                     cursor.execute(
-                        "SELECT hex_id FROM prayer_candidates WHERE country_code = %s AND hex_id IS NOT NULL AND (status = 'prayed' OR status = 'queued')",
+                        "SELECT hex_id FROM prayer_candidates WHERE "
+                        "country_code = %s AND hex_id IS NOT NULL AND "
+                        "(status = 'prayed' OR status = 'queued')",
                         (country_code_hex_prep,),
                     )
                     used_hex_ids = {r["hex_id"] for r in cursor.fetchall()}
-                    current_available_hex_ids = list(all_map_hex_ids - used_hex_ids)
+                    current_available_hex_ids = list(
+                        all_map_hex_ids - used_hex_ids
+                    )
                     random.shuffle(current_available_hex_ids)
                     available_hex_ids_by_country[country_code_hex_prep] = (
                         current_available_hex_ids
                     )
-                    # logging.info(f"app.py: [update_queue] For {country_code_hex_prep}: {len(all_map_hex_ids)} total, {len(used_hex_ids)} used, {len(current_available_hex_ids)} available hexes.")
+                    # logging.info(
+                    #    f"app.py: [update_queue] For {country_code_hex_prep}: "
+                    #    f"{len(all_map_hex_ids)} total, {len(used_hex_ids)} "
+                    #    f"used, {len(current_available_hex_ids)} available hexes."
+                    # )
                 else:
-                    # logging.warning(f"app.py: [update_queue] Hex map data or 'id' column not available for {country_code_hex_prep}.")
+                    # logging.warning(
+                    #    f"app.py: [update_queue] Hex map data or 'id' "
+                    #    f"column not available for {country_code_hex_prep}."
+                    # )
                     available_hex_ids_by_country[country_code_hex_prep] = []
 
             for item_to_process_for_hex in all_potential_candidates:
@@ -377,10 +410,12 @@ def update_queue():
                     cursor.execute(
                         """
                         INSERT INTO prayer_candidates
-                            (person_name, post_label, country_code, party, thumbnail, status, status_timestamp, hex_id)
+                            (person_name, post_label, country_code, party,
+                             thumbnail, status, status_timestamp, hex_id)
                         VALUES (%s, %s, %s, %s, %s, 'queued', %s, %s)
-                        ON CONFLICT (person_name, post_label, country_code) DO NOTHING
-                    """,
+                        ON CONFLICT (person_name, post_label, country_code)
+                        DO NOTHING
+                        """,
                         (
                             person_name,
                             post_label,
@@ -395,28 +430,35 @@ def update_queue():
                         items_added_to_db_this_cycle += 1
                 except psycopg2.Error as e_insert:
                     logging.error(
-                        f"app.py: PostgreSQL error during initial seeding for {person_name} ({post_label}): {e_insert}"
+                        f"app.py: PostgreSQL error during initial seeding for "
+                        f"{person_name} ({post_label}): {e_insert}"
                     )
 
             logging.info(
-                f"app.py: [update_queue] Added {items_added_to_db_this_cycle} new items to prayer_candidates."
+                f"app.py: [update_queue] Added {items_added_to_db_this_cycle} "
+                f"new items to prayer_candidates."
             )
             cursor.execute(
                 "SELECT COUNT(id) FROM prayer_candidates WHERE status = 'queued'"
             )
             current_db_candidates_size = (cursor.fetchone() or [0])[0]
             logging.info(
-                f"app.py: Initial seeding complete. Current 'queued' items: {current_db_candidates_size}"
+                f"app.py: Initial seeding complete. Current 'queued' items: "
+                f"{current_db_candidates_size}"
             )
             conn.commit()
             logging.info("app.py: [update_queue] Database commit successful.")
 
     except psycopg2.Error as e:
-        logging.error(f"app.py: [update_queue] PostgreSQL error: {e}", exc_info=True)
+        logging.error(
+            f"app.py: [update_queue] PostgreSQL error: {e}", exc_info=True
+        )
         if conn:
             conn.rollback()
     except Exception as e_gen:
-        logging.error(f"app.py: [update_queue] Critical error: {e_gen}", exc_info=True)
+        logging.error(
+            f"app.py: [update_queue] Critical error: {e_gen}", exc_info=True
+        )
         if conn:
             conn.rollback()
     finally:
@@ -442,7 +484,9 @@ def load_prayed_for_data_from_db():
         conn = get_db_conn()  # From project.db_utils
         with conn.cursor(cursor_factory=DictCursor) as cursor:
             cursor.execute(
-                "SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id FROM prayer_candidates WHERE status = 'prayed'"
+                "SELECT person_name, post_label, country_code, party, "
+                "thumbnail, status_timestamp AS timestamp, hex_id "
+                "FROM prayer_candidates WHERE status = 'prayed'"
             )
             rows = cursor.fetchall()
             loaded_count = 0
@@ -454,13 +498,17 @@ def load_prayed_for_data_from_db():
                     loaded_count += 1
                 # else: logging.warning(...) # Original warning log
             logging.info(
-                f"app.py: Loaded {loaded_count} 'prayed' items from PostgreSQL into current_app.prayed_for_data."
+                f"app.py: Loaded {loaded_count} 'prayed' items from PostgreSQL "
+                f"into current_app.prayed_for_data."
             )
     except psycopg2.Error as e:
-        logging.error(f"app.py: PostgreSQL error in load_prayed_for_data_from_db: {e}")
+        logging.error(
+            f"app.py: PostgreSQL error in load_prayed_for_data_from_db: {e}"
+        )
     except Exception as e_gen:
         logging.error(
-            f"app.py: Unexpected error in load_prayed_for_data_from_db: {e_gen}",
+            f"app.py: Unexpected error in "
+            f"load_prayed_for_data_from_db: {e_gen}",
             exc_info=True,
         )
     finally:
@@ -476,26 +524,32 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
 
     if country_code_to_reload not in COUNTRIES_CONFIG:  # Check against imported config
         logging.warning(
-            f"app.py: [reload_single_country_prayed_data_from_db] Invalid country_code: {country_code_to_reload}"
+            f"app.py: [reload_single_country_prayed_data_from_db] "
+            f"Invalid country_code: {country_code_to_reload}"
         )
         return
 
     logging.info(
-        f"app.py: Reloading current_app.prayed_for_data for {country_code_to_reload} (PostgreSQL)"
+        f"app.py: Reloading current_app.prayed_for_data for "
+        f"{country_code_to_reload} (PostgreSQL)"
     )
     app_prayed_for_data[country_code_to_reload] = []  # Modify list on current_app store
 
     conn = None
     if not DATABASE_URL:  # Imported
         logging.error(
-            f"app.py: DATABASE_URL not set, cannot reload for {country_code_to_reload}."
+            f"app.py: DATABASE_URL not set, cannot reload for "
+            f"{country_code_to_reload}."
         )
         return
     try:
         conn = get_db_conn()  # From project.db_utils
         with conn.cursor(cursor_factory=DictCursor) as cursor:
             cursor.execute(
-                "SELECT person_name, post_label, country_code, party, thumbnail, status_timestamp AS timestamp, hex_id FROM prayer_candidates WHERE status = 'prayed' AND country_code = %s",
+                "SELECT person_name, post_label, country_code, party, "
+                "thumbnail, status_timestamp AS timestamp, hex_id "
+                "FROM prayer_candidates "
+                "WHERE status = 'prayed' AND country_code = %s",
                 (country_code_to_reload,),
             )
             rows = cursor.fetchall()
@@ -507,15 +561,18 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
                 )  # Modify list on current_app store
                 loaded_count += 1
             logging.info(
-                f"app.py: Reloaded {loaded_count} 'prayed' items for {country_code_to_reload} into current_app.prayed_for_data."
+                f"app.py: Reloaded {loaded_count} 'prayed' items for "
+                f"{country_code_to_reload} into current_app.prayed_for_data."
             )
     except psycopg2.Error as e:
         logging.error(
-            f"app.py: PostgreSQL error reloading for {country_code_to_reload}: {e}"
+            f"app.py: PostgreSQL error reloading for "
+            f"{country_code_to_reload}: {e}"
         )
     except Exception as e_gen:
         logging.error(
-            f"app.py: Unexpected error reloading for {country_code_to_reload}: {e_gen}",
+            f"app.py: Unexpected error reloading for "
+            f"{country_code_to_reload}: {e_gen}",
             exc_info=True,
         )
     finally:

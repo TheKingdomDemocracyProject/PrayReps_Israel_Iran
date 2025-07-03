@@ -8,9 +8,6 @@ from psycopg2.extras import DictCursor  # To fetch rows as dictionaries
 
 # Import from new utility modules within the 'project' package
 from ..db_utils import get_db_conn, DATABASE_URL
-from ..app_config import (
-    COUNTRIES_CONFIG,
-)  # Using this directly for service logic if appropriate
 
 # --- Data Fetching and Processing (from original app.py, to be adapted) ---
 
