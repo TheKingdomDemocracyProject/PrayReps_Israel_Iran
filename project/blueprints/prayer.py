@@ -90,7 +90,7 @@ def process_item_htmx():
         )
         map_image_path_updated = (
             url_for("static", filename="hex_map.png")
-            + f"?v={datetime.now().timestamp()}" # Cache buster
+            + f"?v={datetime.now().timestamp()}"  # Cache buster
         )
 
         # next_item_to_display is already fetched above

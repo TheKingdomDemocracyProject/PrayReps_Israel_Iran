@@ -171,7 +171,7 @@ def plot_hex_map_with_hearts(
         padding_factor_y = 0.1  # Default 10% vertical padding
 
         if country_code == "israel":
-            logger.debug(f"Applying increased padding for Israel map to reduce its relative size.")
+            logger.debug("Applying increased padding for Israel map to reduce its relative size.")
             padding_factor_x = 0.25  # Increase horizontal padding for Israel
             padding_factor_y = 0.25  # Increase vertical padding for Israel
         elif country_code == "iran":
@@ -179,7 +179,7 @@ def plot_hex_map_with_hearts(
             # For now, keep it at the default or slightly less if Israel is the main concern
             padding_factor_x = 0.05
             padding_factor_y = 0.05
-            logger.debug(f"Applying standard/reduced padding for Iran map.")
+            logger.debug("Applying standard/reduced padding for Iran map.")
 
         ax_main_plot.set_xlim(bounds[0] - width * padding_factor_x, bounds[2] + width * padding_factor_x)
         ax_main_plot.set_ylim(bounds[1] - height * padding_factor_y, bounds[3] + height * padding_factor_y)
