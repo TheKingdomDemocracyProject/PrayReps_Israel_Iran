@@ -40,18 +40,24 @@ if __name__ == "__main__":
 
     now = dt.now()
     one_day_ago = now - timedelta(days=1, hours=2)
+    one_day_ago_str = one_day_ago.strftime('%Y-%m-%d %H:%M:%S')
     print(
-        f"One day ago ({one_day_ago.strftime('%Y-%m-%d %H:%M:%S')}) -> {format_pretty_timestamp(one_day_ago.strftime('%Y-%m-%d %H:%M:%S'))}"
+        f"One day ago ({one_day_ago_str}) -> "
+        f"{format_pretty_timestamp(one_day_ago_str)}"
     )
 
     today_early = now - timedelta(hours=5)
+    today_early_str = today_early.strftime('%Y-%m-%d %H:%M:%S')
     print(
-        f"Today early ({today_early.strftime('%Y-%m-%d %H:%M:%S')}) -> {format_pretty_timestamp(today_early.strftime('%Y-%m-%d %H:%M:%S'))}"
+        f"Today early ({today_early_str}) -> "
+        f"{format_pretty_timestamp(today_early_str)}"
     )
 
     two_days_ago = now - timedelta(days=2, hours=3)
+    two_days_ago_str = two_days_ago.strftime('%Y-%m-%d %H:%M:%S')
     print(
-        f"Two days ago ({two_days_ago.strftime('%Y-%m-%d %H:%M:%S')}) -> {format_pretty_timestamp(two_days_ago.strftime('%Y-%m-%d %H:%M:%S'))}"
+        f"Two days ago ({two_days_ago_str}) -> "
+        f"{format_pretty_timestamp(two_days_ago_str)}"
     )
 
     print(f"None input -> {format_pretty_timestamp(None)}")
