@@ -16,6 +16,177 @@
     </script>
 {% endblock %}
 
+{% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const timeChartCtx = document.getElementById('timeChart')?.getContext('2d');
+    const partyChartCtx = document.getElementById('partyChart')?.getContext('2d');
+
+    if (!timeChartCtx || !partyChartCtx) {
+        console.error("Chart canvas elements not found!");
+        return;
+    }
+
+    // Fetch and render Time Chart
+    fetch(`/stats/timedata/${currentCountryCode}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error("Error fetching timedata:", data.error);
+                document.getElementById('timeChart').parentElement.innerHTML = `<p>Error loading time data: ${data.error}</p>`;
+                return;
+            }
+            if (!data.timestamps || data.timestamps.length === 0) {
+                document.getElementById('timeChart').parentElement.innerHTML = "<p>No prayer time data available to display.</p>";
+                return;
+            }
+
+            const prayerEvents = data.timestamps.map((ts, index) => ({
+                x: new Date(ts), // Parse timestamp string to Date object
+                y: index + 1      // Cumulative count
+            }));
+
+            new Chart(timeChartCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: `Cumulative Prayers in ${currentCountryName} Over Time`,
+                        data: prayerEvents,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day', // Adjust time unit as needed (e.g., 'hour', 'week')
+                                tooltipFormat: 'PPpp', // e.g. Aug 4, 2023, 1:23:45 PM
+                                displayFormats: {
+                                    day: 'MMM d, yyyy'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Cumulative Prayers'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        // Find the original prayer detail for this point for richer tooltips
+                                        // This assumes 'values' array corresponds to 'timestamps'
+                                        const originalIndex = context.dataIndex;
+                                        const prayerDetail = data.values[originalIndex];
+                                        if (prayerDetail) {
+                                            label += `${context.parsed.y} (Prayed for ${prayerDetail.person_name || prayerDetail.person})`;
+                                            if (prayerDetail.country) { // For overall view
+                                                label += ` in ${prayerDetail.country}`;
+                                            }
+                                        } else {
+                                            label += context.parsed.y;
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching or processing timedata:', error);
+            document.getElementById('timeChart').parentElement.innerHTML = `<p>Could not load time chart: ${error.message}</p>`;
+        });
+
+    // Fetch and render Party Chart
+    if (currentCountryCode !== 'overall') { // Party stats not applicable for 'overall' in current setup
+        fetch(`/stats/data/${currentCountryCode}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error("Error fetching party data:", data.error);
+                    document.getElementById('partyChart').parentElement.innerHTML = `<p>Error loading party data: ${data.error}</p>`;
+                    return;
+                }
+                const parties = Object.keys(data);
+                const counts = Object.values(data);
+
+                if (parties.length === 0) {
+                    document.getElementById('partyChart').parentElement.innerHTML = "<p>No party data available to display.</p>";
+                    return;
+                }
+
+                // Use partyInfoForCountryJS (passed from Flask) to get colors
+                const backgroundColors = parties.map(partyName => {
+                    // partyInfoForCountryJS is keyed by full party names, data might have short names
+                    // Need to find the party object in partyInfoForCountryJS that corresponds to partyName
+                    let color = '#CCCCCC'; // Default color
+                    for (const key in partyInfoForCountryJS) {
+                        if (partyInfoForCountryJS[key].short_name === partyName) {
+                            color = partyInfoForCountryJS[key].color;
+                            break;
+                        }
+                    }
+                    return color;
+                });
+
+                new Chart(partyChartCtx, {
+                    type: 'pie', // or 'bar'
+                    data: {
+                        labels: parties,
+                        datasets: [{
+                            label: `Prayer Counts by Party in ${currentCountryName}`,
+                            data: counts,
+                            backgroundColor: backgroundColors,
+                            borderColor: '#444444', // Simplified static border color
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            title: {
+                                display: true,
+                                text: `Prayer Counts by Party in ${currentCountryName}`
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching or processing party data:', error);
+                document.getElementById('partyChart').parentElement.innerHTML = `<p>Could not load party chart: ${error.message}</p>`;
+            });
+    } else {
+        document.getElementById('partyChart').parentElement.innerHTML = "<p>Party-specific statistics are not shown in the 'Overall' view.</p>";
+    }
+});
+</script>
+{% endblock %}
+
 {% block content %}
     <div class="content-container statscontent">
         {# Main navigation links are in base.html header #}

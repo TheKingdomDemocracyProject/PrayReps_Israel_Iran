@@ -314,15 +314,40 @@ def update_queue():
                                 if not post_label_for_check
                                 else post_label_for_check
                             )
-                            image_url = item.get(
-                                "image_url", HEART_IMG_PATH
-                            )  # Imported config
-                            item["thumbnail"] = (
-                                image_url if image_url else HEART_IMG_PATH
-                            )
+
+                            raw_image_url = item.get(
+                                "image_url"
+                            )  # Get raw value from CSV
+
+                            final_thumbnail_path = None
+                            # Ensure raw_image_url is a string before calling startswith
+                            if raw_image_url and isinstance(raw_image_url, str):
+                                if raw_image_url.startswith("static/"):
+                                    final_thumbnail_path = raw_image_url[
+                                        len("static/") :
+                                    ]
+                                elif (
+                                    raw_image_url.strip()
+                                ):  # Non-empty and not starting with static/
+                                    final_thumbnail_path = raw_image_url.strip()
+
+                            if (
+                                not final_thumbnail_path
+                            ):  # Fallback if no valid image_url from CSV
+                                # HEART_IMG_PATH is "static/heart_icons/heart_red.png" from app_config
+                                # We need the path relative to 'static/' for the DB.
+                                if HEART_IMG_PATH.startswith("static/"):
+                                    final_thumbnail_path = HEART_IMG_PATH[
+                                        len("static/") :
+                                    ]
+                                else:
+                                    # This case implies HEART_IMG_PATH is already relative or a full URL
+                                    final_thumbnail_path = HEART_IMG_PATH
+
+                            item["thumbnail"] = final_thumbnail_path
                             all_potential_candidates.append(item)
-                        # else: logging.debug(...) # Original log removed
-                    # else: logging.debug(...) # Original log removed
+                        # else: logging.debug(...)  # Original log removed
+                    # else: logging.debug(...)  # Original log removed
 
             logging.info(
                 f"app.py: [update_queue] Collected "

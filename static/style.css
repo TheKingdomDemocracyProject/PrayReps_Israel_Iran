@@ -298,13 +298,22 @@ nav li a.active { /* Optional: style for the current page's link */
 }
 
 .profile-image-container {
-    margin-bottom: 20px;
-    display:none;
+    margin-bottom: 10px; /* Reduced margin */
+    display: flex; /* Changed from none to flex */
+    justify-content: center;
+    align-items: center;
+    width: 80px; /* Fixed width for the container */
+    height: 80px; /* Fixed height for the container */
+    overflow: hidden; /* Ensure image doesn't spill out */
+    border-radius: 50%; /* Make the container circular */
+    background-color: #f0f0f0; /* Placeholder background */
 }
 
 .profile-image-container img {
-    max-height: 4em; /* This ensures the image does not exceed 3 lines of text */
-    border-radius: 50%;
+    width: 100%; /* Make image fill the container */
+    height: 100%; /* Make image fill the container */
+    object-fit: cover; /* Cover the area, crop if necessary */
+    /* border-radius: 50%; */ /* Radius is now on the container */
 }
 
 .left-content {
@@ -312,14 +321,31 @@ nav li a.active { /* Optional: style for the current page's link */
     display: flex;
     flex-direction: column;
     justify-content: center;
+    align-items: center; /* Center content like profile info + button */
     padding-right: 20px;
 }
 
 .right-content {
     flex: 1;
     display: flex;
+    align-items: center; /* Vertically center map container */
+    justify-content: center; /* Horizontally center map container */
+}
+
+/* Container for the map image to stabilize layout */
+#map-image-container {
+    width: 100%;
+    /* Assuming a common aspect ratio for maps, e.g., 16:9 or 4:3.
+       Adjust 16 / 9 based on your actual map image aspect ratios.
+       If they vary wildly, a fixed min-height might be a fallback. */
+    aspect-ratio: 16 / 9;
+    background-color: #f0f0f0; /* Light grey placeholder background */
+    display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden; /* Important if map's aspect ratio differs from container */
+    border-radius: 8px; /* Optional: match styling of other containers */
+    box-shadow: 0 0 5px rgba(0,0,0,0.05); /* Optional: subtle shadow */
 }
 
 .queue-info {
@@ -362,13 +388,58 @@ nav li a.active { /* Optional: style for the current page's link */
     border-radius: 5px;
 }
 .hex-map {
-    max-width: 100%;      /* Ensures the map shrinks to fit container width if necessary */
-    max-height: 630px;    /* Sets the maximum display height */
-    width: auto;          /* Maintains aspect ratio when height is constrained */
-    height: auto;         /* Maintains aspect ratio when width is constrained */
-    display: block;       /* Allows for margin auto centering */
-    margin-left: auto;
-    margin-right: auto;
+    max-width: 100%;      /* Image won't exceed container width */
+    max-height: 100%;     /* Image won't exceed container height */
+    width: auto;          /* Maintain aspect ratio based on height constraint */
+    height: auto;         /* Maintain aspect ratio based on width constraint */
+    object-fit: contain;  /* Fit entire image within container, letterbox if necessary */
+    display: block;       /* Default for img, but good to be explicit */
+    /* margin-left and margin-right auto are not needed if container is flex centering */
+}
+
+/* Styles for country switching links on prayed.html */
+.country-switch-links {
+    margin-top: 20px;
+    margin-bottom: 25px;
+    padding: 10px;
+    background-color: #f8f9fa; /* Light background for the container */
+    border-radius: 6px;
+    text-align: center; /* Center the inline-block elements */
+    border: 1px solid #dee2e6;
+}
+
+.country-switch-links span {
+    margin-right: 10px;
+    font-weight: bold;
+    color: #495057;
+    vertical-align: middle; /* Align span text with buttons */
+}
+
+.country-switch-links .switch-link {
+    display: inline-block; /* Allow padding and margin */
+    padding: 8px 15px;
+    margin: 5px 5px; /* Space between buttons, added vertical margin for wrapping */
+    text-decoration: none;
+    color: #007bff; /* Bootstrap primary blue */
+    background-color: #ffffff;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+    transition: all 0.2s ease-in-out;
+    vertical-align: middle; /* Align buttons with span text */
+}
+
+.country-switch-links .switch-link:hover {
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+}
+
+.country-switch-links .switch-link.active {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+    border-color: #0056b3; /* Darker blue for active border */
+    cursor: default; /* Indicate it's the current page */
 }
 
 /* Queue Page Specific Styles */

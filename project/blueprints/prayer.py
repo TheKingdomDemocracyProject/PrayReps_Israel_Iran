@@ -62,22 +62,42 @@ def process_item_htmx():
             f"Successfully processed item ID {item_id_to_process} as prayed."
         )
 
-        country_code = processed_item_details["country_code"]
-        prayed_for_map_country = prayer_service.get_prayed_representatives(
-            country_code=country_code
+        # Get the next item first to determine the correct map
+        next_item_to_display = prayer_service.get_next_queued_representative()
+
+        # Determine the country code for the map
+        if next_item_to_display:
+            map_country_code = next_item_to_display["country_code"]
+            current_app.logger.info(
+                f"Next item is in {map_country_code}, generating map for this country."
+            )
+        else:
+            # Fallback to the country of the item just prayed for if queue is empty
+            map_country_code = processed_item_details["country_code"]
+            current_app.logger.info(
+                f"Queue is empty. Generating map for the last prayed country: {map_country_code}."
+            )
+
+        # Fetch data for the map based on the determined map_country_code
+        prayed_for_map_data = prayer_service.get_prayed_representatives(
+            country_code=map_country_code
         )
+        # current_queue_items_for_map is used by map_service to show other potential prayer points.
+        # It can remain fetching all queued items, or be filtered for map_country_code if preferred.
+        # For now, keeping existing behaviour of fetching all.
         current_queue_items_for_map = prayer_service.get_queued_representatives()
+
         map_service.generate_country_map_image(
-            country_code,
-            prayed_for_map_country,
+            map_country_code,
+            prayed_for_map_data,
             current_queue_items_for_map,
         )
         map_image_path_updated = (
             url_for("static", filename="hex_map.png")
-            + f"?v={datetime.now().timestamp()}"
+            + f"?v={datetime.now().timestamp()}"  # Cache buster
         )
 
-        next_item_to_display = prayer_service.get_next_queued_representative()
+        # next_item_to_display is already fetched above
 
         total_possible_in_csvs = 0
         for cc_config_iter in current_app.config["COUNTRIES_CONFIG"]:

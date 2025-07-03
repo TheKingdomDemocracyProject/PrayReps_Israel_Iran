@@ -160,9 +160,35 @@ def plot_hex_map_with_hearts(
         ax_main_plot.set_facecolor("white")
         hex_map_gdf.plot(ax=ax_main_plot, color="white", edgecolor="lightgrey")
         ax_main_plot.set_axis_off()
+
         bounds = hex_map_gdf.geometry.total_bounds
-        ax_main_plot.set_xlim(bounds[0], bounds[2])
-        ax_main_plot.set_ylim(bounds[1], bounds[3])
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+
+        # Define a padding factor to adjust perceived size.
+        # Larger padding makes the content appear smaller within the frame.
+        padding_factor_x = 0.1  # Default 10% horizontal padding
+        padding_factor_y = 0.1  # Default 10% vertical padding
+
+        if country_code == "israel":
+            logger.debug(
+                "Applying increased padding for Israel map to reduce its relative size."
+            )
+            padding_factor_x = 0.25  # Increase horizontal padding for Israel
+            padding_factor_y = 0.25  # Increase vertical padding for Israel
+        elif country_code == "iran":
+            # Optionally, slightly reduce padding for Iran if it needs to appear larger
+            # For now, keep it at the default or slightly less if Israel is the main concern
+            padding_factor_x = 0.05
+            padding_factor_y = 0.05
+            logger.debug("Applying standard/reduced padding for Iran map.")
+
+        ax_main_plot.set_xlim(
+            bounds[0] - width * padding_factor_x, bounds[2] + width * padding_factor_x
+        )
+        ax_main_plot.set_ylim(
+            bounds[1] - height * padding_factor_y, bounds[3] + height * padding_factor_y
+        )
         ax_main_plot.set_aspect("equal")
 
         placed_heart_count = 0

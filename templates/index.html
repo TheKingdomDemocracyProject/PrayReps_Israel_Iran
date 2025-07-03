@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}PrayReps - Home{% endblock %}
+{% block title %}
+    {%- if current and current_country_name -%}
+        Praying for {{ current_country_name }} - PrayReps
+    {%- elif current_country_name -%} {# If current is None, but we still have a country context for the map #}
+        Prayer Focus: {{ current_country_name }} - PrayReps
+    {%- else -%}
+        PrayReps - Prayer Focus
+    {%- endif -%}
+{% endblock %}
 
 {% block page_title %}Praying for {{ current_country_name if current else "Representatives" }}{% endblock %}
 
