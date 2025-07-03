@@ -6,9 +6,11 @@ import json
 # try:
 from ..services import prayer_service
 
-# from ..utils import format_pretty_timestamp # Not directly used in this BP's routes, but good to have if templates needed it
+# from ..utils import format_pretty_timestamp # Not directly used, but good for templates
 # except (ImportError, ValueError):
-#     PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+#     PROJECT_ROOT_PATH = os.path.dirname(
+#        os.path.dirname(os.path.dirname(os.path.abspath(__file__))
+#     ))
 #     if PROJECT_ROOT_PATH not in sys.path:
 #         sys.path.append(PROJECT_ROOT_PATH)
 #     from project.services import prayer_service
