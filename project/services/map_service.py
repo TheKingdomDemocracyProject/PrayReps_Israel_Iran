@@ -1,6 +1,7 @@
 from flask import current_app
 import os
-import logging # Using current_app.logger
+import logging  # Using current_app.logger
+import pandas as pd
 
 # Assuming hex_map.py is moved into the project structure or its functions are accessible
 # For now, let's assume it's in the project root, and we might need to adjust paths or import strategy.
@@ -16,64 +17,109 @@ import logging # Using current_app.logger
 
 try:
     # import hex_map as hex_map_plotter # hex_map.py from the root
-    from ..map_utils import hex_map_plotter # Corrected import
+    from ..map_utils import hex_map_plotter  # Corrected import
 except ImportError as e:
     # current_app.logger.error(f"Could not import hex_map_plotter from map_utils: {e}. Ensure it's accessible.")
     # Define dummy functions or raise an error to indicate critical failure
     # This logging might fail if current_app is not available at import time.
     # It's better to log this failure where current_app is guaranteed.
-    logging.getLogger(__name__).error(f"Could not import hex_map_plotter from map_utils: {e}. Ensure it's accessible.")
+    logging.getLogger(__name__).error(
+        f"Could not import hex_map_plotter from map_utils: {e}. Ensure it's accessible."
+    )
+
     class DummyHexMapPlotter:
-        def load_hex_map_data(self, path): return None # Updated method name
-        def load_post_label_mapping_data(self, path): return None # Updated method name
-        def plot_hex_map_with_hearts(self, *args, **kwargs): pass
+        def load_hex_map_data(self, path):
+            return None  # Updated method name
+
+        def load_post_label_mapping_data(self, path):
+            return None  # Updated method name
+
+        def plot_hex_map_with_hearts(self, *args, **kwargs):
+            pass
+
     hex_map_plotter = DummyHexMapPlotter()
 
 
 # --- Map Data Loading (called during app initialization) ---
+
 
 def load_all_map_data(app_context):
     """
     Loads all necessary map data (GeoJSON, post label mappings) into app context stores.
     This replaces the global loading in the original app.py.
     """
-    with app_context: # Ensures current_app is available
+    with app_context:  # Ensures current_app is available
         current_app.logger.info("Loading all map data...")
-        countries_config = current_app.config['COUNTRIES_CONFIG']
+        countries_config = current_app.config["COUNTRIES_CONFIG"]
 
         for country_code, config in countries_config.items():
             # Load map shape data (GeoJSON)
-            map_path = config['map_shape_path']
+            map_path = config["map_shape_path"]
             if os.path.exists(map_path):
-                current_app.hex_map_data_store[country_code] = hex_map_plotter.load_hex_map_data(map_path) # Updated function call
-                if current_app.hex_map_data_store[country_code] is not None and not current_app.hex_map_data_store[country_code].empty : # Added empty check
-                    current_app.logger.info(f"Successfully loaded hex map for {country_code} with {len(current_app.hex_map_data_store[country_code])} features.")
-                elif current_app.hex_map_data_store[country_code] is not None and current_app.hex_map_data_store[country_code].empty:
-                    current_app.logger.warning(f"Loaded hex map for {country_code} from {map_path} is an empty GeoDataFrame.")
-                else: # is None
-                    current_app.logger.error(f"Failed to load hex map for {country_code} from {map_path} (returned None).")
+                current_app.hex_map_data_store[country_code] = (
+                    hex_map_plotter.load_hex_map_data(map_path)
+                )  # Updated function call
+                if (
+                    current_app.hex_map_data_store[country_code] is not None
+                    and not current_app.hex_map_data_store[country_code].empty
+                ):  # Added empty check
+                    current_app.logger.info(
+                        f"Successfully loaded hex map for {country_code} with "
+                        f"{len(current_app.hex_map_data_store[country_code])} features."
+                    )
+                elif (
+                    current_app.hex_map_data_store[country_code] is not None
+                    and current_app.hex_map_data_store[country_code].empty
+                ):
+                    current_app.logger.warning(
+                        f"Loaded hex map for {country_code} from {map_path} is an empty GeoDataFrame."
+                    )
+                else:  # is None
+                    current_app.logger.error(
+                        f"Failed to load hex map for {country_code} from {map_path} (returned None)."
+                    )
             else:
-                current_app.logger.error(f"Map file not found: {map_path} for country {country_code}")
-                current_app.hex_map_data_store[country_code] = None # Ensure it's None if file not found
+                current_app.logger.error(
+                    f"Map file not found: {map_path} for country {country_code}"
+                )
+                current_app.hex_map_data_store[country_code] = (
+                    None  # Ensure it's None if file not found
+                )
 
             # Load post label mapping data (CSV for non-random countries)
-            post_label_path = config.get('post_label_mapping_path')
+            post_label_path = config.get("post_label_mapping_path")
             if post_label_path and os.path.exists(post_label_path):
-                current_app.post_label_mappings_store[country_code] = hex_map_plotter.load_post_label_mapping_data(post_label_path) # Updated function call
+                current_app.post_label_mappings_store[country_code] = (
+                    hex_map_plotter.load_post_label_mapping_data(post_label_path)
+                )  # Updated function call
                 if not current_app.post_label_mappings_store[country_code].empty:
-                    current_app.logger.info(f"Successfully loaded post label mapping for {country_code} with {len(current_app.post_label_mappings_store[country_code])} entries.")
-                else: # Loaded but empty
-                     current_app.logger.warning(f"Post label mapping for {country_code} from {post_label_path} is empty.")
-            elif post_label_path: # Path specified but not found
-                current_app.logger.error(f"Post label mapping file not found: {post_label_path} for country {country_code}")
-                current_app.post_label_mappings_store[country_code] = pd.DataFrame() # Assign empty DataFrame
-            else: # No path specified (e.g., for Israel, Iran using random hex allocation)
-                current_app.logger.debug(f"No post label mapping file specified for {country_code}. Using empty DataFrame.")
-                current_app.post_label_mappings_store[country_code] = pd.DataFrame() # Assign empty DataFrame
+                    current_app.logger.info(
+                        f"Successfully loaded post label mapping for {country_code} with "
+                        f"{len(current_app.post_label_mappings_store[country_code])} entries."
+                    )
+                else:  # Loaded but empty
+                    current_app.logger.warning(
+                        f"Post label mapping for {country_code} from {post_label_path} is empty."
+                    )
+            elif post_label_path:  # Path specified but not found
+                current_app.logger.error(
+                    f"Post label mapping file not found: {post_label_path} for country {country_code}"
+                )
+                current_app.post_label_mappings_store[country_code] = (
+                    pd.DataFrame()
+                )  # Assign empty DataFrame
+            else:  # No path specified (e.g., for Israel, Iran using random hex allocation)
+                current_app.logger.debug(
+                    f"No post label mapping file specified for {country_code}. Using empty DataFrame."
+                )
+                current_app.post_label_mappings_store[country_code] = (
+                    pd.DataFrame()
+                )  # Assign empty DataFrame
         current_app.logger.info("Finished loading all map data.")
 
 
 # --- Map Plotting ---
+
 
 def generate_country_map_image(country_code, prayed_for_items_list, queue_items_list):
     """
@@ -96,18 +142,20 @@ def generate_country_map_image(country_code, prayed_for_items_list, queue_items_
     # output_image_path = os.path.join(current_app.config['STATIC_FOLDER'], map_image_filename)
 
     if hex_map_gdf is None or hex_map_gdf.empty:
-        current_app.logger.error(f"Cannot plot map for {country_code}: GeoDataFrame is missing or empty.")
+        current_app.logger.error(
+            f"Cannot plot map for {country_code}: GeoDataFrame is missing or empty."
+        )
         # plot_hex_map_with_hearts in hex_map.py already handles saving a placeholder if GDF is empty.
         # We just need to call it.
         hex_map_plotter.plot_hex_map_with_hearts(
-            hex_map_gdf, # Will be None or empty
-            post_label_df, # Could be None or empty
+            hex_map_gdf,  # Will be None or empty
+            post_label_df,  # Could be None or empty
             prayed_for_items_list,
             queue_items_list,
-            country_code
+            country_code,
             # heart_img_path is handled by hex_map.py's load_random_heart_image
         )
-        return False # Indicate failure or that a placeholder was made
+        return False  # Indicate failure or that a placeholder was made
 
     # For countries like Israel/Iran, post_label_df might be empty, which is fine.
     # hex_map_plotter.plot_hex_map_with_hearts should handle this.
@@ -118,15 +166,20 @@ def generate_country_map_image(country_code, prayed_for_items_list, queue_items_
             post_label_df,
             prayed_for_items_list,
             queue_items_list,
-            country_code
+            country_code,
             # heart_img_path is handled by hex_map.py's load_random_heart_image
         )
-        current_app.logger.info(f"Successfully generated and saved map image for {country_code}.")
-        return True # Indicate success
+        current_app.logger.info(
+            f"Successfully generated and saved map image for {country_code}."
+        )
+        return True  # Indicate success
     except Exception as e:
-        current_app.logger.error(f"Error during map plotting for {country_code}: {e}", exc_info=True)
+        current_app.logger.error(
+            f"Error during map plotting for {country_code}: {e}", exc_info=True
+        )
         # hex_map.py's plot_hex_map_with_hearts has its own try-except to save an error placeholder.
         return False
+
 
 # Note: The original app.py directly modified global variables like HEX_MAP_DATA_STORE.
 # In this refactored version, these are attributes of `current_app` (e.g., `current_app.hex_map_data_store`),
@@ -144,4 +197,3 @@ def generate_country_map_image(country_code, prayed_for_items_list, queue_items_
 # If hex_map.py were moved into 'project/utils/', its APP_ROOT would point to 'project/utils/',
 # and it would fail to find 'static/heart_icons' unless paths were adjusted.
 # The current structure (hex_map.py in root) with sys.path append for the service to find it is workable.
-import pandas as pd # Added for the empty DataFrame in load_all_map_data

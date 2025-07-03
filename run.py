@@ -4,10 +4,10 @@ import sys
 
 app = create_app()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         # Port for Render, default to 5000 for local dev
-        port = int(os.environ.get('PORT', 5000))
+        port = int(os.environ.get("PORT", 5000))
 
         # Note: app.py's original initialize_app_data() logic will be called
         # during create_app() or explicitly afterwards if refactored.
@@ -19,9 +19,9 @@ if __name__ == '__main__':
         #    from project.data_loader import initialize_app_data
         #    initialize_app_data(app)
 
-        app.run(debug=True, host='0.0.0.0', port=port)
+        app.run(debug=True, host="0.0.0.0", port=port)
     except KeyboardInterrupt:
-        print('You pressed Ctrl+C! Exiting gracefully...')
+        print("You pressed Ctrl+C! Exiting gracefully...")
         sys.exit(0)
     except Exception as e:
         # This is a good place to log any startup errors if logging isn't fully up yet
