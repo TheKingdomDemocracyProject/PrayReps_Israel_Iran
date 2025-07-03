@@ -27,9 +27,26 @@
 {% endblock %}
 
 {% block content %}
-    <div class="intro-text">
-        <p>Welcome to PrayReps! We're glad you're here to pray for the elected representatives of <strong>Israel</strong> and <strong>Iran</strong>.</p>
-        <p>Below, you'll see one representative at a time. Take a moment to pray for them, then click "🙏 Amen" to move to the next person. The map will update to show who you've prayed for. For more information, check out the <a href="{{ url_for('main.about_page') }}">About page</a>.</p>
+    <div id="welcome-overlay" class="welcome-overlay-container">
+        <div class="welcome-modal-content">
+            <h2>Welcome to PrayReps!</h2>
+            <p>Thank you for joining with us in prayer for all those who serve in government.</p>
+            <p>You'll see one representative at a time. Take a moment to pray for them, then click "🙏 Amen" to move to the next person.</p>
+            <p>If it helps, here are some good pointers for how to pray:</p>
+            <ul>
+                <li>Celebrate God’s love for them, his knowledge of them, and his desire for relationship with them</li>
+                <li>Thank God for them and recognise all the ways their lives have reflected being made in God’s image in the past, and all the ways they will do so in the future</li>
+                <li>Ask God that someone would tell them about God’s great love for them</li>
+                <li>Pray that as they learn about God and come to know Him that they would love him and in return desire deeper relationship and fellowship</li>
+                <li>Expect the Kingdom of God to be present in their lives and that as God establishes His Kingdom in their lives, they would be so excited to be transformed into His likeness</li>
+                <li>And as God builds his Kingdom in them that it would transform everything in their lives: their families, their friends, their communities, their Parliamentary colleagues, and the way they serve their constituencies.</li>
+                <li>And remember the church in the places these people serve, pray for their encouragement and to be a strong foil for the work of the politicians. That the Body of Christ would welcome and invite and love their MP while advocating, championing and challenging on behalf of that place.</li>
+                <li>And that as MPs and churches seek God’s heart for these places that the Kingdom would come and lives would be transformed, renewed, revived, restored, and all the other things found where God is at work.</li>
+            </ul>
+            <p>When you click Amen the map will update to show who you've prayed for.</p>
+            <p>For more information, check out the <a href="{{ url_for('main.about_page') }}">About page</a>.</p>
+            <button id="dismiss-welcome-button" class="dismiss-button">Continue to Prayer</button>
+        </div>
     </div>
 
     {# This div will be updated by HTMX after processing an item via OOB swap #}
@@ -68,6 +85,33 @@
 
 {% block scripts_extra %}
 <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const welcomeOverlay = document.getElementById('welcome-overlay');
+        const dismissButton = document.getElementById('dismiss-welcome-button');
+        const welcomeDismissedKey = 'prayRepsWelcomeDismissed';
+
+        // Check if the welcome message has been dismissed before
+        if (localStorage.getItem(welcomeDismissedKey) === 'true') {
+            if (welcomeOverlay) {
+                welcomeOverlay.classList.add('hidden');
+            }
+        } else {
+            if (welcomeOverlay) {
+                welcomeOverlay.classList.remove('hidden'); // Ensure it's visible if not dismissed
+            }
+        }
+
+        // Add event listener to the dismiss button
+        if (dismissButton) {
+            dismissButton.addEventListener('click', function () {
+                if (welcomeOverlay) {
+                    welcomeOverlay.classList.add('hidden');
+                }
+                localStorage.setItem(welcomeDismissedKey, 'true');
+            });
+        }
+    });
+
     document.body.addEventListener('htmx:afterSwap', function(event) {
         // This event fires after HTMX has swapped content.
         // We can use this to re-evaluate things or trigger further actions if needed.
@@ -78,16 +122,15 @@
         // we might need to disable the Amen button.
         const amenButton = document.getElementById('amen-button');
         if (amenButton) {
-            const currentItemContent = document.getElementById('current-item-container').textContent || "";
-            if (currentItemContent.includes("Queue is empty") || currentItemContent.includes("All prayers complete")) {
-                amenButton.disabled = true;
-            } else {
-                // Check if the new content for current-item-container has a valid new item ID for the button
-                // This is tricky because the button itself is part of the swapped content if hx-target is its parent.
-                // The hx-vals on the button should ideally be updated by the server response if it's swapping the button too.
-                // If only _current_item_display.html is swapped, the button's hx-vals needs dynamic update.
-                // The current HTMX setup replaces the #current-item-container, which includes the button if it's inside the partial.
-                // The partial _current_item_display.html should handle disabling the button or setting correct hx-vals.
+            const currentItemContainer = document.getElementById('current-item-container');
+            if (currentItemContainer) {
+                const currentItemContent = currentItemContainer.textContent || "";
+                if (currentItemContent.includes("Queue is empty") || currentItemContent.includes("All prayers complete")) {
+                    amenButton.disabled = true;
+                } else {
+                    // Ensure button is enabled if there's content
+                    amenButton.disabled = false;
+                }
             }
         }
     });
