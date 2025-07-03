@@ -41,14 +41,10 @@ bp = Blueprint("prayer", __name__, url_prefix="/prayer")
 @bp.route("/process_item_htmx", methods=["POST"])
 def process_item_htmx():
     item_id_str = request.form.get("item_id")
-    current_app.logger.info(
-        f"HTMX request to process item ID: {item_id_str}"
-    )
+    current_app.logger.info(f"HTMX request to process item ID: {item_id_str}")
 
     if not item_id_str:
-        current_app.logger.error(
-            "Missing item_id in HTMX request to process_item."
-        )
+        current_app.logger.error("Missing item_id in HTMX request to process_item.")
         return "Error: Missing item_id", 400
 
     try:
@@ -76,20 +72,19 @@ def process_item_htmx():
             prayed_for_map_country,
             current_queue_items_for_map,
         )
-        map_image_path_updated = url_for(
-            "static", filename="hex_map.png"
-        ) + f"?v={datetime.now().timestamp()}"
-
-        next_item_to_display = (
-            prayer_service.get_next_queued_representative()
+        map_image_path_updated = (
+            url_for("static", filename="hex_map.png")
+            + f"?v={datetime.now().timestamp()}"
         )
+
+        next_item_to_display = prayer_service.get_next_queued_representative()
 
         total_possible_in_csvs = 0
         for cc_config_iter in current_app.config["COUNTRIES_CONFIG"]:
             df = prayer_service.fetch_csv_data(cc_config_iter)
-            num_to_select = current_app.config["COUNTRIES_CONFIG"][
-                cc_config_iter
-            ].get("total_representatives", len(df))
+            num_to_select = current_app.config["COUNTRIES_CONFIG"][cc_config_iter].get(
+                "total_representatives", len(df)
+            )
             total_possible_in_csvs += min(
                 len(df),
                 num_to_select if num_to_select is not None else float("inf"),
@@ -192,10 +187,8 @@ def put_back_htmx():
     new_hex_id_to_assign = None
     if country_code_form in ["israel", "iran"]:
         with current_app.app_context():
-            new_hex_id_to_assign = (
-                prayer_service.get_available_hex_id_for_country(
-                    country_code_form, exclude_candidate_id=candidate_id
-                )
+            new_hex_id_to_assign = prayer_service.get_available_hex_id_for_country(
+                country_code_form, exclude_candidate_id=candidate_id
             )
 
     rows_affected = prayer_service.put_representative_back_in_queue(
@@ -208,15 +201,11 @@ def put_back_htmx():
             f"New hex_id (if any): {new_hex_id_to_assign}"
         )
 
-        prayed_list_for_country_updated = (
-            prayer_service.get_prayed_representatives(
-                country_code=country_code_form
-            )
+        prayed_list_for_country_updated = prayer_service.get_prayed_representatives(
+            country_code=country_code_form
         )
 
-        current_queue_items_for_map = (
-            prayer_service.get_queued_representatives()
-        )
+        current_queue_items_for_map = prayer_service.get_queued_representatives()
         map_service.generate_country_map_image(
             country_code_form,
             prayed_list_for_country_updated,
@@ -224,9 +213,7 @@ def put_back_htmx():
         )
 
         prayed_items_display = []
-        country_party_info = current_app.config["PARTY_INFO"].get(
-            country_code_form, {}
-        )
+        country_party_info = current_app.config["PARTY_INFO"].get(country_code_form, {})
         other_party_default = {"short_name": "Other", "color": "#CCCCCC"}
         for item_iter in prayed_list_for_country_updated:
             item_copy = item_iter.copy()
@@ -238,9 +225,9 @@ def put_back_htmx():
                 party_name_from_log,
                 country_party_info.get("Other", other_party_default),
             )
-            item_copy["party_class"] = party_data["short_name"].lower().replace(
-                " ", "-"
-            ).replace("&", "and")
+            item_copy["party_class"] = (
+                party_data["short_name"].lower().replace(" ", "-").replace("&", "and")
+            )
             item_copy["party_color"] = party_data["color"]
             prayed_items_display.append(item_copy)
 
@@ -267,12 +254,11 @@ def get_queue_json():
     for item_iter in items:
         if (
             "country_code" in item_iter
-            and item_iter["country_code"]
-            in current_app.config["COUNTRIES_CONFIG"]
+            and item_iter["country_code"] in current_app.config["COUNTRIES_CONFIG"]
         ):
-            item_iter["country_name"] = current_app.config[
-                "COUNTRIES_CONFIG"
-            ][item_iter["country_code"]]["name"]
+            item_iter["country_name"] = current_app.config["COUNTRIES_CONFIG"][
+                item_iter["country_code"]
+            ]["name"]
         else:
             item_iter["country_name"] = "Unknown Country"
     return jsonify(items)
@@ -289,22 +275,16 @@ def queue_page_html():
 @bp.route("/process_item_form", methods=["POST"])
 def process_item_form():
     item_id_str = request.form.get("item_id")
-    current_app.logger.info(
-        f"Form request to process item ID: {item_id_str}"
-    )
+    current_app.logger.info(f"Form request to process item ID: {item_id_str}")
 
     if not item_id_str:
-        current_app.logger.error(
-            "Missing item_id in form request to process_item."
-        )
+        current_app.logger.error("Missing item_id in form request to process_item.")
         # Handle error appropriately, e.g., flash message and redirect
         return redirect(url_for("main.home"))
     try:
         item_id_to_process = int(item_id_str)
     except ValueError:
-        current_app.logger.error(
-            f"Invalid item_id format in form: {item_id_str}"
-        )
+        current_app.logger.error(f"Invalid item_id format in form: {item_id_str}")
         return redirect(url_for("main.home"))
 
     processed_item_details, rows_affected = (
@@ -317,14 +297,10 @@ def process_item_form():
         )
         country_code = processed_item_details["country_code"]
         # Regenerate map for the affected country
-        prayed_for_map_country = (
-            prayer_service.get_prayed_representatives(
-                country_code=country_code
-            )
+        prayed_for_map_country = prayer_service.get_prayed_representatives(
+            country_code=country_code
         )
-        current_queue_items_for_map = (
-            prayer_service.get_queued_representatives()
-        )
+        current_queue_items_for_map = prayer_service.get_queued_representatives()
         map_service.generate_country_map_image(
             country_code,
             prayed_for_map_country,
@@ -353,8 +329,7 @@ def put_back_form():
 
     if not all([person_name, country_code_form]):  # post_label can be None
         current_app.logger.error(
-            "Missing required fields (person_name, country_code) for "
-            "put_back_form."
+            "Missing required fields (person_name, country_code) for " "put_back_form."
         )
         return redirect(url_for("prayer.prayed_list_default_redirect"))
 
@@ -397,10 +372,8 @@ def put_back_form():
     new_hex_id_to_assign = None
     if country_code_form in ["israel", "iran"]:  # Hex ID logic
         with current_app.app_context():  # Ensure context for service call
-            new_hex_id_to_assign = (
-                prayer_service.get_available_hex_id_for_country(
-                    country_code_form, exclude_candidate_id=candidate_id
-                )
+            new_hex_id_to_assign = prayer_service.get_available_hex_id_for_country(
+                country_code_form, exclude_candidate_id=candidate_id
             )
 
     rows_affected = prayer_service.put_representative_back_in_queue(
@@ -412,10 +385,8 @@ def put_back_form():
             f"Successfully put item ID {candidate_id} back in queue via form."
         )
         # Regenerate map
-        prayed_list_updated = (
-            prayer_service.get_prayed_representatives(
-                country_code=country_code_form
-            )
+        prayed_list_updated = prayer_service.get_prayed_representatives(
+            country_code=country_code_form
         )
         current_queue_items = prayer_service.get_queued_representatives()
         map_service.generate_country_map_image(
@@ -427,9 +398,7 @@ def put_back_form():
         )
 
     return redirect(
-        url_for(
-            "prayer.prayed_list_page_html", country_code=country_code_form
-        )
+        url_for("prayer.prayed_list_page_html", country_code=country_code_form)
     )
 
 
@@ -437,19 +406,14 @@ def put_back_form():
 def prayed_list_page_html(country_code):
     if country_code == "overall":
         overall_prayed_list_display = []
-        prayed_items_all = prayer_service.get_prayed_representatives(
-            country_code=None
-        )
-        prayed_items_all.sort(
-            key=lambda x: x.get("timestamp", ""), reverse=True
-        )
+        prayed_items_all = prayer_service.get_prayed_representatives(country_code=None)
+        prayed_items_all.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         for item_iter in prayed_items_all:
             display_item = item_iter.copy()
             item_country_code = display_item.get("country_code")
             if (
                 item_country_code
-                and item_country_code
-                in current_app.config["COUNTRIES_CONFIG"]
+                and item_country_code in current_app.config["COUNTRIES_CONFIG"]
             ):
                 display_item["country_name_display"] = current_app.config[
                     "COUNTRIES_CONFIG"
@@ -467,19 +431,13 @@ def prayed_list_page_html(country_code):
             f"Invalid country code '{country_code}' for prayed list page. "
             f"Redirecting to default."
         )
-        default_country = list(current_app.config["COUNTRIES_CONFIG"].keys())[
-            0
-        ]
+        default_country = list(current_app.config["COUNTRIES_CONFIG"].keys())[0]
         return redirect(
-            url_for(
-                "prayer.prayed_list_page_html", country_code=default_country
-            )
+            url_for("prayer.prayed_list_page_html", country_code=default_country)
         )
     else:
-        prayed_items_for_country = (
-            prayer_service.get_prayed_representatives(
-                country_code=country_code
-            )
+        prayed_items_for_country = prayer_service.get_prayed_representatives(
+            country_code=country_code
         )
         current_country_party_info = current_app.config["PARTY_INFO"].get(
             country_code, {}
@@ -496,15 +454,15 @@ def prayed_list_page_html(country_code):
                 party_name_from_log,
                 current_country_party_info.get("Other", other_party_default),
             )
-            item["party_class"] = party_data["short_name"].lower().replace(
-                " ", "-"
-            ).replace("&", "and")
+            item["party_class"] = (
+                party_data["short_name"].lower().replace(" ", "-").replace("&", "and")
+            )
             item["party_color"] = party_data["color"]
             prayed_list_display_specific.append(item)
         prayed_for_list_to_render = prayed_list_display_specific
-        current_country_name = current_app.config["COUNTRIES_CONFIG"][
-            country_code
-        ]["name"]
+        current_country_name = current_app.config["COUNTRIES_CONFIG"][country_code][
+            "name"
+        ]
 
     now = datetime.now()
     return render_template(
@@ -519,9 +477,7 @@ def prayed_list_page_html(country_code):
 @bp.route("/")
 def prayed_list_default_redirect():
     if current_app.config["COUNTRIES_CONFIG"]:
-        default_country_code = list(
-            current_app.config["COUNTRIES_CONFIG"].keys()
-        )[0]
+        default_country_code = list(current_app.config["COUNTRIES_CONFIG"].keys())[0]
         return redirect(
             url_for(
                 "prayer.prayed_list_page_html",

@@ -93,9 +93,7 @@ def app(monkeypatch):  # Add monkeypatch as an argument
     print(
         f"CONFTTEST_FIXTURE_APP: Actual DATABASE_URL from app.config: {actual_app_config_db_url}"
     )
-    assert (
-        expected_mock_db_url_part in actual_app_config_db_url
-    ), (
+    assert expected_mock_db_url_part in actual_app_config_db_url, (
         f"App.config['DATABASE_URL'] not using mocked URL. "
         f"Expected '{expected_mock_db_url_part}' in path '{actual_app_config_db_url}'"
     )

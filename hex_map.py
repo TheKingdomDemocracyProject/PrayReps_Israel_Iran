@@ -156,17 +156,13 @@ def plot_hex_map_with_hearts(
                 fig_base, ax_base = plt.subplots(1, 1, figsize=(10, 10))
                 fig_base.patch.set_facecolor("white")
                 ax_base.set_facecolor("white")
-                hex_map_gdf.plot(
-                    ax=ax_base, color="white", edgecolor="lightgrey"
-                )
+                hex_map_gdf.plot(ax=ax_base, color="white", edgecolor="lightgrey")
                 ax_base.set_axis_off()
                 bounds_base = hex_map_gdf.geometry.total_bounds
                 ax_base.set_xlim(bounds_base[0], bounds_base[2])
                 ax_base.set_ylim(bounds_base[1], bounds_base[3])
                 ax_base.set_aspect("equal")
-                plt.savefig(
-                    output_path, bbox_inches="tight", pad_inches=0.5, dpi=100
-                )
+                plt.savefig(output_path, bbox_inches="tight", pad_inches=0.5, dpi=100)
                 logging.info(
                     f"Saved base map for {country_code} without "
                     f"hearts/highlights due to missing 'id' column."
@@ -261,8 +257,7 @@ def plot_hex_map_with_hearts(
                     f"{country_code}. Cannot map items to hexes."
                 )
             elif not all(
-                col in post_label_mapping_df.columns
-                for col in ["post_label", "name"]
+                col in post_label_mapping_df.columns for col in ["post_label", "name"]
             ):
                 logging.error(
                     f"Required columns ('post_label', 'name') not in "
@@ -327,9 +322,7 @@ def plot_hex_map_with_hearts(
                 if country_code in ["israel", "iran"]:
                     # Random Allocation Highlighting
                     if "id" in hex_map_gdf.columns:  # Should be true
-                        num_hearts_already_plotted = len(
-                            prayed_for_items_list
-                        )
+                        num_hearts_already_plotted = len(prayed_for_items_list)
                         all_hex_ids_list = list(hex_map_gdf["id"].unique())
 
                         # Determine hexes that already have hearts
@@ -351,9 +344,7 @@ def plot_hex_map_with_hearts(
                         )
 
                         # New logic: Prioritize pre-assigned hex_id
-                        assigned_hex_id_for_highlight = top_queue_item.get(
-                            "hex_id"
-                        )
+                        assigned_hex_id_for_highlight = top_queue_item.get("hex_id")
 
                         if assigned_hex_id_for_highlight:
                             logging.info(
@@ -362,8 +353,7 @@ def plot_hex_map_with_hearts(
                                 f"item in {country_code}."
                             )
                             location_geom_q = hex_map_gdf[
-                                hex_map_gdf["id"]
-                                == assigned_hex_id_for_highlight
+                                hex_map_gdf["id"] == assigned_hex_id_for_highlight
                             ]
                             if not location_geom_q.empty:
                                 geom = location_geom_q.geometry.iloc[0]
@@ -420,12 +410,8 @@ def plot_hex_map_with_hearts(
                                         prayed_item_fallback.get("hex_id")
                                     )
 
-                            all_hex_ids_list_fallback = list(
-                                hex_map_gdf["id"].unique()
-                            )
-                            all_hex_ids_set_fallback = set(
-                                all_hex_ids_list_fallback
-                            )
+                            all_hex_ids_list_fallback = list(hex_map_gdf["id"].unique())
+                            all_hex_ids_set_fallback = set(all_hex_ids_list_fallback)
                             available_ids_for_highlight_fallback = list(
                                 all_hex_ids_set_fallback
                                 - prayed_hex_ids_set_for_highlight_fallback
@@ -443,14 +429,11 @@ def plot_hex_map_with_hearts(
                                     f"available hexes."
                                 )
                                 location_geom_q_fallback = hex_map_gdf[
-                                    hex_map_gdf["id"]
-                                    == hex_id_to_highlight_fallback
+                                    hex_map_gdf["id"] == hex_id_to_highlight_fallback
                                 ]
                                 if not location_geom_q_fallback.empty:
                                     geom_fallback = (
-                                        location_geom_q_fallback.geometry.iloc[
-                                            0
-                                        ]
+                                        location_geom_q_fallback.geometry.iloc[0]
                                     )
                                     if geom_fallback.geom_type == "Polygon":
                                         hex_patch = Polygon(
@@ -463,9 +446,7 @@ def plot_hex_map_with_hearts(
                                         )
                                         ax.add_patch(hex_patch)
                                     elif geom_fallback.geom_type == "MultiPolygon":
-                                        for poly_fallback in list(
-                                            geom_fallback.geoms
-                                        ):
+                                        for poly_fallback in list(geom_fallback.geoms):
                                             hex_patch = Polygon(
                                                 poly_fallback.exterior.coords,
                                                 closed=True,
@@ -506,21 +487,15 @@ def plot_hex_map_with_hearts(
                         )
                         and "name" in hex_map_gdf.columns
                     ):
-                        top_queue_post_label = top_queue_item.get(
-                            "post_label", ""
-                        )
+                        top_queue_post_label = top_queue_item.get("post_label", "")
                         if top_queue_post_label:
-                            location_code_series_q = (
-                                post_label_mapping_df.loc[
-                                    post_label_mapping_df["post_label"]
-                                    == top_queue_post_label,
-                                    "name",
-                                ]
-                            )
+                            location_code_series_q = post_label_mapping_df.loc[
+                                post_label_mapping_df["post_label"]
+                                == top_queue_post_label,
+                                "name",
+                            ]
                             if not location_code_series_q.empty:
-                                location_code_q = (
-                                    location_code_series_q.iloc[0]
-                                )
+                                location_code_q = location_code_series_q.iloc[0]
                                 location_geom_q = hex_map_gdf[
                                     hex_map_gdf["name"] == location_code_q
                                 ]
@@ -649,8 +624,7 @@ def plot_hex_map_with_hearts(
             )
         except Exception as e_stat_after:
             logging.error(
-                f"Error getting stat for {output_path} after save: "
-                f"{e_stat_after}"
+                f"Error getting stat for {output_path} after save: " f"{e_stat_after}"
             )
 
 

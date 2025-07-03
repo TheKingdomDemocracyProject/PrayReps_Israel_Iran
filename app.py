@@ -41,9 +41,7 @@ log_file_path_app_direct = os.path.join(APP_ROOT, "logs_app", "app_direct.log")
 os.makedirs(os.path.dirname(log_file_path_app_direct), exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
-    format=(
-        "%(asctime)s - %(levelname)s - %(message)s (app.py direct)"
-    ),
+    format=("%(asctime)s - %(levelname)s - %(message)s (app.py direct)"),
     handlers=[
         logging.FileHandler(log_file_path_app_direct),
         logging.StreamHandler(),
@@ -106,9 +104,7 @@ def init_db():
                 "and indexes."
             )
     except psycopg2.Error as e:
-        logging.error(
-            f"app.py: Error initializing PostgreSQL database: {e}"
-        )
+        logging.error(f"app.py: Error initializing PostgreSQL database: {e}")
         if conn:
             conn.rollback()
     except ValueError as ve:  # Catch DATABASE_URL not configured from get_db_conn
@@ -145,13 +141,11 @@ def get_current_queue_items_from_db():
             )
     except psycopg2.Error as e:
         logging.error(
-            f"app.py: PostgreSQL error in "
-            f"get_current_queue_items_from_db: {e}"
+            f"app.py: PostgreSQL error in " f"get_current_queue_items_from_db: {e}"
         )
     except Exception as e_gen:
         logging.error(
-            f"app.py: Unexpected error in "
-            f"get_current_queue_items_from_db: {e_gen}",
+            f"app.py: Unexpected error in " f"get_current_queue_items_from_db: {e_gen}",
             exc_info=True,
         )
     finally:
@@ -238,9 +232,7 @@ def update_queue():
     current_hex_map_store = current_app.hex_map_data_store
 
     try:
-        logging.info(
-            "app.py: [update_queue] Attempting to connect to PostgreSQL DB."
-        )
+        logging.info("app.py: [update_queue] Attempting to connect to PostgreSQL DB.")
         conn = get_db_conn()  # From project.db_utils
         with conn.cursor(cursor_factory=DictCursor) as cursor:
             logging.info(
@@ -364,9 +356,7 @@ def update_queue():
                         (country_code_hex_prep,),
                     )
                     used_hex_ids = {r["hex_id"] for r in cursor.fetchall()}
-                    current_available_hex_ids = list(
-                        all_map_hex_ids - used_hex_ids
-                    )
+                    current_available_hex_ids = list(all_map_hex_ids - used_hex_ids)
                     random.shuffle(current_available_hex_ids)
                     available_hex_ids_by_country[country_code_hex_prep] = (
                         current_available_hex_ids
@@ -450,15 +440,11 @@ def update_queue():
             logging.info("app.py: [update_queue] Database commit successful.")
 
     except psycopg2.Error as e:
-        logging.error(
-            f"app.py: [update_queue] PostgreSQL error: {e}", exc_info=True
-        )
+        logging.error(f"app.py: [update_queue] PostgreSQL error: {e}", exc_info=True)
         if conn:
             conn.rollback()
     except Exception as e_gen:
-        logging.error(
-            f"app.py: [update_queue] Critical error: {e_gen}", exc_info=True
-        )
+        logging.error(f"app.py: [update_queue] Critical error: {e_gen}", exc_info=True)
         if conn:
             conn.rollback()
     finally:
@@ -502,13 +488,10 @@ def load_prayed_for_data_from_db():
                 f"into current_app.prayed_for_data."
             )
     except psycopg2.Error as e:
-        logging.error(
-            f"app.py: PostgreSQL error in load_prayed_for_data_from_db: {e}"
-        )
+        logging.error(f"app.py: PostgreSQL error in load_prayed_for_data_from_db: {e}")
     except Exception as e_gen:
         logging.error(
-            f"app.py: Unexpected error in "
-            f"load_prayed_for_data_from_db: {e_gen}",
+            f"app.py: Unexpected error in " f"load_prayed_for_data_from_db: {e_gen}",
             exc_info=True,
         )
     finally:
@@ -566,8 +549,7 @@ def reload_single_country_prayed_data_from_db(country_code_to_reload):
             )
     except psycopg2.Error as e:
         logging.error(
-            f"app.py: PostgreSQL error reloading for "
-            f"{country_code_to_reload}: {e}"
+            f"app.py: PostgreSQL error reloading for " f"{country_code_to_reload}: {e}"
         )
     except Exception as e_gen:
         logging.error(

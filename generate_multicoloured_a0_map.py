@@ -72,9 +72,7 @@ def plot_hex_map_with_hearts(
                 ax.add_artist(ab)
 
     # Save the plot as an image in the specified directory with tight bounding box
-    plt.savefig(
-        output_path, bbox_inches="tight"
-    )
+    plt.savefig(output_path, bbox_inches="tight")
     plt.close(fig)  # Close the plot to free memory
 
 

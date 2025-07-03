@@ -11,12 +11,8 @@ APP_DATA_DIR = os.path.join(APP_ROOT, "data")
 COUNTRIES_CONFIG = {
     "israel": {
         "csv_path": os.path.join(APP_DATA_DIR, "20221101_israel.csv"),
-        "geojson_path": os.path.join(
-            APP_DATA_DIR, "ISR_Parliament_120.geojson"
-        ),
-        "map_shape_path": os.path.join(
-            APP_DATA_DIR, "ISR_Parliament_120.geojson"
-        ),
+        "geojson_path": os.path.join(APP_DATA_DIR, "ISR_Parliament_120.geojson"),
+        "map_shape_path": os.path.join(APP_DATA_DIR, "ISR_Parliament_120.geojson"),
         "post_label_mapping_path": None,
         "total_representatives": 120,
         "name": "Israel",
