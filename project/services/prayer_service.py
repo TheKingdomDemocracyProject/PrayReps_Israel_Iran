@@ -59,7 +59,8 @@ def process_deputies_from_df(df_country, country_code):
             deputies_with_images.append(processed_row)
 
     current_app.logger.debug(
-        f"Processed deputies for {country_code}: {len(deputies_with_images)} with, {len(deputies_without_images)} without images."
+        f"Processed deputies for {country_code}: {len(deputies_with_images)} with, "
+        f"{len(deputies_without_images)} without images."
     )
     return {
         "with_images": deputies_with_images,
@@ -183,7 +184,8 @@ def mark_representative_as_prayed(candidate_id):
 
             if not item_to_update_row:
                 current_app.logger.warning(
-                    f"Attempted to mark item ID {candidate_id} as prayed, but it was not found or not in 'queued' state (PostgreSQL)."
+                    f"Attempted to mark item ID {candidate_id} as prayed, but it was not "
+                    f"found or not in 'queued' state (PostgreSQL)."
                 )
                 return None, 0
 
@@ -214,7 +216,8 @@ def mark_representative_as_prayed(candidate_id):
             else:
                 conn.rollback()  # Should not happen if initial check passed
                 current_app.logger.warning(
-                    f"Mark as prayed for ID {candidate_id} (PostgreSQL) affected 0 rows, despite initial check."
+                    f"Mark as prayed for ID {candidate_id} (PostgreSQL) affected 0 rows, "
+                    f"despite initial check."
                 )
                 return None, 0
     except psycopg2.Error as e:
@@ -262,7 +265,8 @@ def put_representative_back_in_queue(candidate_id, new_hex_id=None):
 
             if not item_to_update_row:
                 current_app.logger.warning(
-                    f"Attempted to put item ID {candidate_id} back in queue (PG), but it was not found or not in 'prayed' state."
+                    f"Attempted to put item ID {candidate_id} back in queue (PG), but it "
+                    f"was not found or not in 'prayed' state."
                 )
                 return 0
 
@@ -327,7 +331,8 @@ def get_available_hex_id_for_country(country_code, exclude_candidate_id=None):
 
     if hex_map_gdf is None or hex_map_gdf.empty or "id" not in hex_map_gdf.columns:
         current_app.logger.warning(
-            f"Hex map data or 'id' column not available for {country_code} via current_app.hex_map_data_store. Cannot assign hex_id."
+            f"Hex map data or 'id' column not available for {country_code} via "
+            f"current_app.hex_map_data_store. Cannot assign hex_id."
         )
         return None
 
