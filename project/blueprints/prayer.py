@@ -68,11 +68,15 @@ def process_item_htmx():
         # Determine the country code for the map
         if next_item_to_display:
             map_country_code = next_item_to_display["country_code"]
-            current_app.logger.info(f"Next item is in {map_country_code}, generating map for this country.")
+            current_app.logger.info(
+                f"Next item is in {map_country_code}, generating map for this country."
+            )
         else:
             # Fallback to the country of the item just prayed for if queue is empty
             map_country_code = processed_item_details["country_code"]
-            current_app.logger.info(f"Queue is empty. Generating map for the last prayed country: {map_country_code}.")
+            current_app.logger.info(
+                f"Queue is empty. Generating map for the last prayed country: {map_country_code}."
+            )
 
         # Fetch data for the map based on the determined map_country_code
         prayed_for_map_data = prayer_service.get_prayed_representatives(
