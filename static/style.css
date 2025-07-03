@@ -2,9 +2,88 @@ body {
     font-family: Arial, sans-serif;
     text-align: center;
     background-color: #f0f0f0;
+    margin: 0; /* Ensure no default body margin interferes with full-width header */
+    padding: 0; /* Ensure no default body padding */
 }
 
-.content {
+/* Header Styles */
+header {
+    background-color: #333; /* Dark background for the header */
+    color: white;
+    padding: 10px 20px; /* Vertical and horizontal padding */
+    width: 100%;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+    display: flex; /* Flex container for header-content and nav */
+    flex-direction: column; /* Stack header-content and nav vertically */
+    align-items: center; /* Center content horizontally */
+}
+
+.header-content {
+    display: flex;
+    align-items: center; /* Vertically align logo and title */
+    justify-content: space-between; /* Space out logo/title from nav if nav was sibling */
+    width: 100%;
+    max-width: 1200px; /* Max width consistent with content */
+    margin-bottom: 10px; /* Space between header-content and nav */
+}
+
+.header-content .logo {
+    max-height: 50px; /* Adjust as needed */
+    margin-right: 15px;
+}
+
+.header-content h1 {
+    font-size: 1.8em;
+    margin: 0;
+    text-align: left; /* Align title to the left within its space */
+    flex-grow: 1; /* Allow title to take available space */
+}
+
+/* Navigation Styles will go below this */
+nav {
+    width: 100%; /* Nav takes full width of its container (the header) */
+    display: flex;
+    justify-content: center; /* Center the ul within the nav */
+    margin-top: 10px; /* Add some space above the nav if header-content is compact */
+}
+
+nav ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    display: flex; /* Arrange list items horizontally */
+    justify-content: center; /* Center items in the ul, if ul is not full width */
+    /* background-color: #444; */ /* Optional: slightly different bg for nav itself */
+    /* border-radius: 4px; */
+}
+
+/* Styles for nav li and nav a will be in the next step */
+nav li {
+    margin: 0 5px; /* Spacing between nav items */
+}
+
+nav li a {
+    display: block; /* Makes the entire area clickable and respects padding */
+    color: white; /* Link text color */
+    text-decoration: none; /* Remove underline from links */
+    padding: 10px 15px; /* Padding around the link text */
+    border-radius: 4px; /* Slightly rounded corners for hover effect */
+    transition: background-color 0.3s ease; /* Smooth transition for hover */
+}
+
+nav li a:hover {
+    background-color: #555; /* Background color on hover */
+    color: #fff; /* Text color on hover, can be same or different */
+}
+
+nav li a.active { /* Optional: style for the current page's link */
+    background-color: #666;
+    font-weight: bold;
+}
+
+
+/* Base container for consistent padding, width, etc. */
+.content-container {
     margin: 20px auto;
     padding: 20px;
     background-color: white;
@@ -13,6 +92,13 @@ body {
     width: 80%;
     max-width: 1200px;
 }
+
+/* Modifier for flex behavior, used on index.html */
+.content-container--flex {
+    display: flex;
+    justify-content: space-between; /* Existing behavior from .columns or second .content */
+}
+
 
 .sentence-box {
     display: flex;
@@ -149,37 +235,50 @@ body {
 .other { background-color: #CCCCCC; }
 
 /* Layout */
+/* .columns class can be removed if .content-container--flex replaces its usage */
+/*
 .columns {
     display: flex;
     justify-content: space-between;
     margin: 20px 0;
 }
-
-.column {
+*/
+.column { /* This might still be used within a flex container */
     flex: 1;
     padding: 10px;
 }
 
 /* General Styles */
-.content {
-    display: flex;
-    margin: 20px auto;
-    padding: 20px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 80%;
-    max-width: 1200px;
+/* .content class is now replaced by .content-container and .content-container--flex */
+
+/* Ensure these specific content types inherit from .content-container */
+/* If they have no unique styles, they can just use class="content-container" in HTML */
+/* For now, let's assume they might have specific styles later, so we keep the class names */
+.prayedcontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
 }
 
-.prayedcontent, .statscontent, .queuecontent {
-    margin: 20px auto;
-    padding: 20px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 80%;
-    max-width: 1200px;
+.statscontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
+}
+
+.queuecontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
+}
+
+/* For text-heavy content containers like About page and intro text */
+.text-content, .intro-text {
+    text-align: left;
+    max-width: 800px; /* Or whatever feels right for reading width */
+    margin-left: auto; /* Center the text block if its max-width is less than parent */
+    margin-right: auto;
+}
+
+.intro-text { /* Specific margins for the intro on home page */
+    margin-bottom: 30px;
+    padding: 15px;
+    background-color: #e9ecef; /* A slightly different background to distinguish it */
+    border-radius: 6px;
 }
 
 .sentence-box {
@@ -187,8 +286,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 40px 0;
-    font-size: 3em;
+    margin: 20px 0; /* Reduced top/bottom margin slightly */
+    font-size: 2em; /* Reduced font size */
+    font-weight: normal; /* Was missing, but present in an earlier definition */
 }
 
 .profile {
