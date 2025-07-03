@@ -2,6 +2,83 @@ body {
     font-family: Arial, sans-serif;
     text-align: center;
     background-color: #f0f0f0;
+    margin: 0; /* Ensure no default body margin interferes with full-width header */
+    padding: 0; /* Ensure no default body padding */
+}
+
+/* Header Styles */
+header {
+    background-color: #333; /* Dark background for the header */
+    color: white;
+    padding: 10px 20px; /* Vertical and horizontal padding */
+    width: 100%;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+    display: flex; /* Flex container for header-content and nav */
+    flex-direction: column; /* Stack header-content and nav vertically */
+    align-items: center; /* Center content horizontally */
+}
+
+.header-content {
+    display: flex;
+    align-items: center; /* Vertically align logo and title */
+    justify-content: space-between; /* Space out logo/title from nav if nav was sibling */
+    width: 100%;
+    max-width: 1200px; /* Max width consistent with content */
+    margin-bottom: 10px; /* Space between header-content and nav */
+}
+
+.header-content .logo {
+    max-height: 50px; /* Adjust as needed */
+    margin-right: 15px;
+}
+
+.header-content h1 {
+    font-size: 1.8em;
+    margin: 0;
+    text-align: left; /* Align title to the left within its space */
+    flex-grow: 1; /* Allow title to take available space */
+}
+
+/* Navigation Styles will go below this */
+nav {
+    width: 100%; /* Nav takes full width of its container (the header) */
+    display: flex;
+    justify-content: center; /* Center the ul within the nav */
+    margin-top: 10px; /* Add some space above the nav if header-content is compact */
+}
+
+nav ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    display: flex; /* Arrange list items horizontally */
+    justify-content: center; /* Center items in the ul, if ul is not full width */
+    /* background-color: #444; */ /* Optional: slightly different bg for nav itself */
+    /* border-radius: 4px; */
+}
+
+/* Styles for nav li and nav a will be in the next step */
+nav li {
+    margin: 0 5px; /* Spacing between nav items */
+}
+
+nav li a {
+    display: block; /* Makes the entire area clickable and respects padding */
+    color: white; /* Link text color */
+    text-decoration: none; /* Remove underline from links */
+    padding: 10px 15px; /* Padding around the link text */
+    border-radius: 4px; /* Slightly rounded corners for hover effect */
+    transition: background-color 0.3s ease; /* Smooth transition for hover */
+}
+
+nav li a:hover {
+    background-color: #555; /* Background color on hover */
+    color: #fff; /* Text color on hover, can be same or different */
+}
+
+nav li a.active { /* Optional: style for the current page's link */
+    background-color: #666;
+    font-weight: bold;
 }
 
 /* Base container for consistent padding, width, etc. */
