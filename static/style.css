@@ -81,7 +81,6 @@ nav li a.active { /* Optional: style for the current page's link */
     font-weight: bold;
 }
 
-
 /* Base container for consistent padding, width, etc. */
 .content-container {
     margin: 20px auto;
