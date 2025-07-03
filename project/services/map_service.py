@@ -63,7 +63,8 @@ def load_all_map_data(app_context):
                     and not current_app.hex_map_data_store[country_code].empty
                 ):  # Added empty check
                     current_app.logger.info(
-                        f"Successfully loaded hex map for {country_code} with {len(current_app.hex_map_data_store[country_code])} features."
+                        f"Successfully loaded hex map for {country_code} with "
+                        f"{len(current_app.hex_map_data_store[country_code])} features."
                     )
                 elif (
                     current_app.hex_map_data_store[country_code] is not None
@@ -92,7 +93,8 @@ def load_all_map_data(app_context):
                 )  # Updated function call
                 if not current_app.post_label_mappings_store[country_code].empty:
                     current_app.logger.info(
-                        f"Successfully loaded post label mapping for {country_code} with {len(current_app.post_label_mappings_store[country_code])} entries."
+                        f"Successfully loaded post label mapping for {country_code} with "
+                        f"{len(current_app.post_label_mappings_store[country_code])} entries."
                     )
                 else:  # Loaded but empty
                     current_app.logger.warning(
