@@ -94,6 +94,41 @@ The application supports several key user interactions:
     *   The `/refresh` route is also mentioned but its primary function is to redirect to home, as the queue is managed by `update_queue` (called by `/purge` or on startup).
     *   **User Experience Enhancement**: Key interactions, such as marking a representative as prayed for or putting them back in the queue, are now handled using HTMX. This allows for partial page updates, providing a smoother and faster user experience by avoiding full page reloads for these actions.
 
+## Development
+
+### Linting and Formatting
+This project uses Flake8 for linting and Black for code formatting. To ensure code quality and consistency, please run these tools before committing changes.
+
+*   **Install tools:**
+    ```bash
+    pip install flake8 black
+    ```
+*   **Run Flake8 (linting):**
+    ```bash
+    flake8 .
+    ```
+*   **Run Black (formatting check):**
+    ```bash
+    black --check .
+    ```
+*   **Apply Black formatting:**
+    ```bash
+    black .
+    ```
+The CI pipeline will also run these checks.
+
+### Testing
+The project uses pytest for running tests. Basic smoke tests are included to verify that the application starts and key endpoints are accessible.
+
+*   **Run tests:**
+    ```bash
+    python -m pytest
+    ```
+    Or to run specific test files:
+    ```bash
+    python -m pytest tests/test_smoke.py
+    ```
+
 ## Contributing
 Feel free to contribute by submitting pull requests or opening issues. If you're interested in the vision behind PrayReps then you might want to look at [the Kingdom Democracy Project's website](https://kingdomdemocracy.global/).
 
