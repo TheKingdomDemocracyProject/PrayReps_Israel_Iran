@@ -1,194 +1,111 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Praying for elected representatives around the world</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1 class="main-title">Praying for elected representatives around the world</h1>
-    <div class="queue-info">
-        <div>Representatives left to pray for: <span id="remaining">{{ remaining }}</span></div>
-        <div>Representatives waiting for prayer: <span id="queue_size">{{ queue|length }}</span></div>
+{% extends "base.html" %}
+
+{% block title %}PrayReps - Home{% endblock %}
+
+{% block page_title %}Praying for {{ current_country_name if current else "Representatives" }}{% endblock %}
+
+{% block head_extra %}
+    {# Any page-specific head elements, like specific JS variables if not handled by context processors #}
+    <script>
+        // Provide defaults for tojson filter to prevent errors if vars are None or Undefined.
+        let initialMapCountryCode = {{ initial_map_country_code | default(None) | tojson | safe }};
+
+        {# These lines were suspected to cause issues if all_countries_config or party_info_all_countries were Undefined.
+           They are currently JS-commented out. If they were to be used, they'd also need defaults.
+        // const ALL_COUNTRIES_CONFIG_JS = {{ all_countries_config | default({}) | tojson | safe }};
+        // const PARTY_INFO_ALL_COUNTRIES_JS = {{ party_info_all_countries | default({}) | tojson | safe }};
+        #}
+    </script>
+{% endblock %}
+
+{% block content %}
+    <div class="intro-text">
+        <p>Welcome to PrayReps! We're glad you're here to pray for the elected representatives of <strong>Israel</strong> and <strong>Iran</strong>.</p>
+        <p>Below, you'll see one representative at a time. Take a moment to pray for them, then click "🙏 Amen" to move to the next person. The map will update to show who you've prayed for. For more information, check out the <a href="{{ url_for('main.about_page') }}">About page</a>.</p>
     </div>
+
+    {# This div will be updated by HTMX after processing an item via OOB swap #}
+    {# These containers will be updated by HTMX after processing an item via OOB swap from prayer.process_item_htmx #}
+    <div id="stats-summary-container" hx-swap-oob="true">
+        {% include 'partials/_stats_summary.html' with context %}
+    </div>
+
     <div class="content">
         <div class="left-content">
-            <div id="current-constituency" class="sentence-box">
-                Waiting for results. Stay tuned!
+            {# This div is the primary target for the Amen button's HTMX POST.
+               It will be replaced by the response from process_item_htmx,
+               which should include this container itself with updated content
+               and the other OOB swap divs.
+            #}
+            <div id="main-interaction-content">
+                {# The _current_item_display.html partial now includes the Amen button #}
+                {# This ensures the button's hx-vals are always fresh for the current item #}
+                <div id="current-item-container" hx-swap-oob="true">
+                    {% include 'partials/_current_item_display.html' with context %}
+                </div>
             </div>
-            <div class="controls">
-                <button id="next-button" onclick="nextConstituency()" style="display: none;">Amen 🙏</button>
-            </div>
+             {# No separate controls div here anymore, it's inside _current_item_display.html #}
         </div>
         <div class="right-content">
-            <img id="hex-map" src="{{ url_for('static', filename='hex_map.png') }}" alt="Hex Map" class="hex-map">
+            <div id="map-image-container" hx-swap-oob="true">
+                {% include 'partials/_map_image_display.html' with context %}
+            </div>
         </div>
     </div>
-    <ul id="queue_list"></ul>
-    <div class="links">
-        {# Ensure default_country_code is available, or fallback to the first key from all_countries if COUNTRIES_CONFIG is not empty #}
-        {# {% set display_country_code = default_country_code if default_country_code else (list(all_countries.keys())[0] if all_countries else None) %} #}
 
-        {# Always show overall links, and specific country links if a default is available #}
-        <a href="{{ url_for('prayed_list_overall') }}">View prayed for representatives</a>
-        <a href="{{ url_for('statistics_overall') }}">View Statistics</a>
-        <a href="{{ url_for('queue_page') }}">View Full Queue</a>
-    </div>
-    <script>
-        const allCountriesConfig = {{ all_countries | tojson }};
-        let processedCount = {{ (all_countries.values() | sum(attribute='total_representatives')) - remaining }}; // Calculate initial prayed based on total from all countries
-        const totalRepresentativesAllCountries = {{ (all_countries.values() | sum(attribute='total_representatives')) }};
-        let currently_displayed_map_country_code = {{ initial_map_country_code | tojson }};
+    {# Removed old queue list and script, will be handled by HTMX or separate pages #}
+    {# The links are now in the main navigation in base.html #}
 
+{% endblock %}
 
-        function updateQueueInfo() {
-            console.log('Fetching queue data...');
-            fetch('/queue/json')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok ' + response.statusText);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data && Array.isArray(data)) {
-                        console.log('Queue data:', data);
-                        document.getElementById('queue_size').innerText = data.length;
-                        if (data.length > 0) {
-                            const current = data[0];
-                            const new_person_country_code = current.country_code; // Use a distinct name for clarity
-                            const countryName = (allCountriesConfig && allCountriesConfig[new_person_country_code]) ? allCountriesConfig[new_person_country_code].name : 'Unknown Country';
+{% block scripts_extra %}
+<script>
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        // This event fires after HTMX has swapped content.
+        // We can use this to re-evaluate things or trigger further actions if needed.
+        // For example, if a specific part of the page needs re-initialization for some JS library.
+        console.log('HTMX content swapped. Target:', event.detail.target.id);
 
-                            let representativeText = '';
-                            if (!current.place || current.place === 'N/A' || current.place.trim() === '') {
-                                representativeText = `Praying for <span id="personName">${current.person_name}</span> who serves ${countryName}`;
-                            } else {
-                                representativeText = `Praying for <span id="personName">${current.person_name}</span> from ${countryName} representing <span id="constituency">${current.place}</span>`;
-                            }
-
-                            document.getElementById('current-constituency').innerHTML = `
-                                <div class="profile">
-                                    <div class="profile-image-container">
-                                        <img id="profileImage" src="${current.thumbnail}" alt="Profile image of ${current.person_name}">
-                                    </div>
-                                    <div class="profile-text">
-                                        ${representativeText}
-                                    </div>
-                                </div>
-                            `;
-
-                            if (new_person_country_code && new_person_country_code !== currently_displayed_map_country_code) {
-                                console.log(`Current person's country (${new_person_country_code}) differs from displayed map (${currently_displayed_map_country_code}). Fetching new map.`);
-                                fetch(`/generate_map_for_country/${new_person_country_code}`)
-                                    .then(response => {
-                                        if (!response.ok) {
-                                            throw new Error(`Failed to generate map for ${new_person_country_code}: ${response.statusText}`);
-                                        }
-                                        return response.json();
-                                    })
-                                    .then(map_gen_response => {
-                                        console.log(map_gen_response.status || 'Map generation triggered.');
-                                        reloadHexMap();
-                                        currently_displayed_map_country_code = new_person_country_code;
-                                    })
-                                    .catch(error => {
-                                        console.error('Error updating map for new country:', error);
-                                    });
-                            } else {
-                                // Country is the same, or no new person, but still reload map if queue changed.
-                                // This ensures highlight updates if top person of same country changes.
-                                reloadHexMap();
-                            }
-                            document.getElementById('next-button').style.display = 'block';
-                        } else {
-                            document.getElementById('current-constituency').innerText = 'All prayers complete or queue is empty. Stay tuned!';
-                            document.getElementById('next-button').style.display = 'none';
-                            // Optional: if queue is empty, maybe revert to a default map or clear it?
-                            // For now, it keeps showing the last map.
-                            reloadHexMap(); // Reload to ensure map is up-to-date (e.g. no highlight if queue empty)
-                        }
-                        // reloadHexMap(); // This was the original position, moved up for clarity
-                    } else {
-                        console.error('Unexpected data format:', data);
-                    }
-                })
-                .catch(error => {
-                    console.error('There has been a problem with your fetch operation:', error);
-                });
-        }
-
-        function reloadHexMap() {
-            const hexMap = document.getElementById('hex-map');
-            const newSrc = hexMap.src.split('?')[0] + '?' + new Date().getTime();  // Force reload by adding a timestamp
-            // ==== DETAILED LOGGING START ====
-            console.log("Reloading hex map with new source:", newSrc);
-            // ==== DETAILED LOGGING END ====
-            const newImage = new Image();
-            newImage.onload = function () {
-                hexMap.src = newSrc;
+        // If the current item container was swapped and it's now empty (no more items)
+        // we might need to disable the Amen button.
+        const amenButton = document.getElementById('amen-button');
+        if (amenButton) {
+            const currentItemContent = document.getElementById('current-item-container').textContent || "";
+            if (currentItemContent.includes("Queue is empty") || currentItemContent.includes("All prayers complete")) {
+                amenButton.disabled = true;
+            } else {
+                // Check if the new content for current-item-container has a valid new item ID for the button
+                // This is tricky because the button itself is part of the swapped content if hx-target is its parent.
+                // The hx-vals on the button should ideally be updated by the server response if it's swapping the button too.
+                // If only _current_item_display.html is swapped, the button's hx-vals needs dynamic update.
+                // The current HTMX setup replaces the #current-item-container, which includes the button if it's inside the partial.
+                // The partial _current_item_display.html should handle disabling the button or setting correct hx-vals.
             }
-            newImage.src = newSrc;
         }
+    });
 
-        function nextConstituency() {
-            fetch('/process_item', { method: 'POST' })
-                .then(() => {
-                    processedCount++; // Increment local count of processed items
-                    // The 'remaining' is now globally calculated in app.py and passed to the template.
-                    // We should fetch the updated global remaining count, or update it based on current item processing.
-                    // For simplicity, let's decrement the total displayed remaining count.
-                    // A more robust solution would be to get the new 'remaining' from the server.
-                    const remainingElement = document.getElementById('remaining');
-                    let currentRemaining = parseInt(remainingElement.innerText);
-                    if (!isNaN(currentRemaining)) {
-                        remainingElement.innerText = Math.max(0, currentRemaining - 1);
-                    }
-
-                    // Fetch and log the next item from /queue/json
-                    fetch('/queue/json')
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data && Array.isArray(data) && data.length > 0) {
-                                console.log('Next item from queue/json after process_item:', data[0]);
-                            } else if (data && Array.isArray(data) && data.length === 0) {
-                                console.log('Queue is empty after process_item.');
-                            } else {
-                                console.log('Unexpected data format from queue/json after process_item:', data);
-                            }
-                            updateQueueInfo(); // Call updateQueueInfo after logging
-                        })
-                        .catch(error => {
-                            console.error('Error fetching queue/json after processing item:', error);
-                            updateQueueInfo(); // Still call updateQueueInfo to refresh UI
-                        });
-                })
-                .catch(error => {
-                    console.error('Error processing item:', error);
-                    // Potentially call updateQueueInfo() here as well if the UI needs to be refreshed even on error
-                });
+    // Example of how to handle HX-Triggered events if we used them more extensively
+    /*
+    document.body.addEventListener('updateMap', function(event) {
+        const newMapSrc = event.detail.newSrc;
+        const mapImage = document.getElementById('hexmap-image'); // Ensure your map image has this ID
+        if (mapImage && newMapSrc) {
+            mapImage.src = newMapSrc;
+            console.log('Map image updated via HX-Trigger:', newMapSrc);
         }
+    });
 
-        function purgeQueue() {
-            fetch('/purge', { method: 'POST' }) // Assuming GET for purge as per app.py, if POST, keep as is.
-                                                // The instruction for app.py had /purge as GET.
-                .then(response => {
-                    if(response.ok) {
-                        // Update UI after successful purge
-                        processedCount = 0;
-                        document.getElementById('remaining').innerText = totalRepresentativesAllCountries; // Reset to total
-                        updateQueueInfo(); // This will refresh the queue display (should be empty)
-                                           // and current-constituency message.
-                    } else {
-                        console.error('Purge request failed');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error purging queue:', error);
-                });
-        }
-
-        setInterval(updateQueueInfo, 10000);  // Update every 10 seconds
-        updateQueueInfo();  // Initial call to populate the data immediately
-    </script>
-</body>
-</html>
+    document.body.addEventListener('updateStats', function(event) {
+        // Assuming the stats summary is fetched and swapped by an HTMX element itself
+        // Or, if event.detail contains HTML for stats:
+        // const statsContainer = document.getElementById(event.detail.target);
+        // if (statsContainer && event.detail.html) {
+        //    statsContainer.innerHTML = event.detail.html;
+        // }
+        console.log('Stats update triggered.');
+        // Example: htmx.trigger("#stats-summary-container", "loadStats");
+        // and <div id="stats-summary-container" hx-get="/path/to/stats/fragment" hx-trigger="loadStats">
+    });
+    */
+</script>
+{% endblock %}

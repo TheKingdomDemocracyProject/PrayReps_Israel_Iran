@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PrayReps{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {# HTMX script - place in head or at end of body. Head is common. #}
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <a href="{{ url_for('main.home') }}">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="PrayReps Logo" class="logo">
+            </a>
+            <h1>{% block page_title %}Praying for Representatives{% endblock %}</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('main.home') }}">Home</a></li>
+                <li><a href="{{ url_for('prayer.queue_page_html') }}">Queue</a></li>
+                <li><a href="{{ url_for('prayer.prayed_list_default_redirect') }}">Prayed List</a></li>
+                <li><a href="{{ url_for('stats.statistics_default_redirect') }}">Statistics</a></li>
+                <li><a href="{{ url_for('main.about_page') }}">About</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; {{ now.year }} PrayReps Project.
+            Inspired by the <a href="https://kingdomdemocracy.global/" target="_blank" rel="noopener noreferrer">Kingdom Democracy Project</a>.
+             | <a href="{{ url_for('main.about_page') }}">About PrayReps</a>
+        </p>
+    </footer>
+
+    {# Global JS variables or scripts can go here if needed #}
+    <script>
+        // Make configuration available to JavaScript if needed globally
+        // These are already available via context processors in main.py for templates,
+        // but if JS files need them without being in a template, this is one way.
+        // const ALL_COUNTRIES_CONFIG = {{ all_countries_config | tojson | safe }};
+        // const PARTY_INFO_ALL_COUNTRIES = {{ party_info_all_countries | tojson | safe }};
+    </script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html>

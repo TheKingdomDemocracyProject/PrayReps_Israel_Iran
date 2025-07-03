@@ -1,85 +1,74 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Praying for elected representatives around the world</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="prayedcontent">
-        <h1>Prayed List for {{ country_name }}</h1>
-        <div class="links">
-            <a href="{{ url_for('home') }}">Back to Main</a>
-            <a href="{{ url_for('queue_page') }}">View Queue</a>
-            <a href="#" id="toggleAffiliationButton" onclick="togglePartyAffiliation()">Show Party Affiliation</a>
-            <a href="{{ url_for('statistics', country_code=country_code) }}">View Statistics for {{ country_name }}</a>
+{% extends "base.html" %}
+
+{% block title %}Prayed List - {{ country_name }}{% endblock %}
+
+{% block page_title %}Prayed List for {{ country_name }}{% endblock %}
+
+{% block content %}
+    <div class="prayedcontent content-container">
+        {# Links are now in base.html nav, but we can have page-specific actions here #}
+        <div class="page-actions">
+            <button id="toggleAffiliationButton" onclick="togglePartyAffiliation()">Show/Hide Party Colors</button>
+            <a href="{{ url_for('stats.statistics_page', country_code=country_code) }}" class="button-link">View Statistics for {{ country_name }}</a>
         </div>
+
         <div class="country-switch-links">
             Switch to:
-            <a href="{{ url_for('prayed_list_overall') }}">Overall Prayed List</a>
-            {% for code, config in all_countries.items() %}
-                {% if code != country_code %} {# Optionally hide link to current view if it's a specific country #}
-                    <a href="{{ url_for('prayed_list', country_code=code) }}">{{ config.name }} prayed for representatives</a>
+            <a href="{{ url_for('prayer.prayed_list_page_html', country_code='overall') }}">Overall Prayed List</a>
+            {% for code, config_data in all_countries_config.items() %} {# Use all_countries_config from context processor #}
+                {% if code != country_code %}
+                    <a href="{{ url_for('prayer.prayed_list_page_html', country_code=code) }}">{{ config_data.name }}</a>
                 {% endif %}
             {% endfor %}
         </div>
-        <div class="prayed-list">
-            {% for item in prayed_for_list %}
-            <div class="prayed-item" style="border-left: 5px solid {{ item.party_color if item.party_color else '#A9A9A9' }}; padding-left: 10px;">
-                <span>
-                    <span class="highlight {{ item.party_class if item.party_class else 'party-other-overall' }}"
-                          data-party-color="{{ item.party_color if item.party_color else '#A9A9A9' }}"
-                          title="{{ item.party if item.party else 'N/A' }}">{{ item.person_name }}</span>
-                    {% if item.post_label and item.post_label != "" %}
-                        from {{ item.post_label }}
-                    {% endif %}
-                    {% if country_code == 'overall' and item.country_name_display %}
-                        ({{ item.country_name_display }})
-                    {% endif %}
-                    was prayed for {{ item.formatted_timestamp }}.
-                </span>
-                {% if country_code != 'overall' %}
-                    <form method="POST" action="{{ url_for('put_back_in_queue') }}" style="display: inline;">
-                        <input type="hidden" name="person_name" value="{{ item.person_name }}">
-                        <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
-                        <input type="hidden" name="country_code" value="{{ country_code }}"> {# This should be item.country_code if on overall page, but overall hides this form #}
-                        <button type="submit">Put Back in Queue</button>
-                    </form>
-                {% endif %}
-            </div>
-            {% else %}
-            <p>No items have been prayed for in {{ country_name }} yet.</p>
-            {% endfor %}
-        </div>
-        <div class="links">
-            <a href="{{ url_for('home') }}">Back to Main</a>
+        {# This container will be updated by HTMX when an item is put back in queue #}
+        <div id="prayed-list-items-container-{{ country_code if country_code != 'overall' else 'overall_view' }}">
+             {% include 'partials/_prayed_list_table.html' with context %}
         </div>
     </div>
-    <script>
-        // The returnToQueue function is now part of the form submission, so no specific JS needed for that button.
-        // However, if you had other general JS, it would go here.
+{% endblock %}
 
+{% block scripts_extra %}
+    <script>
         function togglePartyAffiliation() {
             const highlights = document.querySelectorAll('.highlight');
             highlights.forEach(span => {
-                if (span.style.backgroundColor === '' || span.style.backgroundColor === 'transparent' || span.style.backgroundColor === 'rgba(0, 0, 0, 0)') { // Check for transparent
+                // Check if currently transparent or default (empty string for style.backgroundColor)
+                if (!span.style.backgroundColor || span.style.backgroundColor === 'transparent' || span.style.backgroundColor === 'rgba(0, 0, 0, 0)') {
                     span.style.backgroundColor = span.getAttribute('data-party-color');
-                    span.style.color = 'white'; // Example: change text color for better visibility
+                    // Consider text color for contrast - this is a simple example
+                    // A better approach would be to add/remove a class that defines both bg and text color
+                    const partyColor = span.getAttribute('data-party-color').toLowerCase();
+                    if (partyColor === '#ffff00' || partyColor === 'yellow' || partyColor === '#add8e6' || partyColor === '#90ee90') { // Light colors
+                        span.style.color = 'black';
+                    } else {
+                        span.style.color = 'white';
+                    }
                 } else {
                     span.style.backgroundColor = 'transparent';
-                    span.style.color = ''; // Reset text color
+                    span.style.color = ''; // Reset to default text color
                 }
             });
+            // Update button text
+            const button = document.getElementById('toggleAffiliationButton');
+            if (button.textContent.includes('Show')) {
+                button.textContent = 'Hide Party Colors';
+            } else {
+                button.textContent = 'Show Party Colors';
+            }
         }
 
-        // Initial setting to hide party affiliation by default
+        // Initial setting to hide party affiliation by default when page loads
         document.addEventListener('DOMContentLoaded', function() {
             const highlights = document.querySelectorAll('.highlight');
             highlights.forEach(span => {
-                span.style.backgroundColor = 'transparent'; // Ensure it starts transparent
-                span.style.color = ''; // Ensure default text color
+                span.style.backgroundColor = 'transparent';
+                span.style.color = '';
             });
+            const button = document.getElementById('toggleAffiliationButton');
+            if (button) { // Ensure button exists
+                 button.textContent = 'Show Party Colors';
+            }
         });
     </script>
-</body>
-</html>
+{% endblock %}

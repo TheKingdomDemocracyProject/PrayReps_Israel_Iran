@@ -1,0 +1,53 @@
+{# This partial is for rendering the list of prayed items, used by HTMX in prayed.html #}
+{% for item in prayed_for_list %}
+<div class="prayed-item" style="border-left: 5px solid {{ item.party_color if item.party_color else '#A9A9A9' }}; padding-left: 10px;">
+    <span>
+        <span class="highlight {{ item.party_class if item.party_class else 'party-other-overall' }}"
+              data-party-color="{{ item.party_color if item.party_color else '#A9A9A9' }}"
+              title="{{ item.party if item.party else 'N/A' }}">{{ item.person_name }}</span>
+        {% if item.post_label and item.post_label != "" %}
+            from {{ item.post_label }}
+        {% endif %}
+        {% if country_code == 'overall' and item.country_name_display %}
+            ({{ item.country_name_display }})
+        {% endif %}
+        was prayed for {{ item.formatted_timestamp }}.
+    </span>
+    {% if country_code != 'overall' %}
+        <form hx-post="{{ url_for('prayer.put_back_htmx') }}"
+              hx-target="#prayed-list-items-container-{{ country_code }}"
+              hx-swap="innerHTML"
+              style="display: inline;">
+            <input type="hidden" name="candidate_id" value="{{ item.id }}">
+            <input type="hidden" name="country_code" value="{{ country_code }}">
+            <input type="hidden" name="person_name" value="{{ item.person_name }}">
+            <input type="hidden" name="post_label" value="{{ item.post_label | default('') }}">
+            <button type="submit">Put Back in Queue</button>
+        </form>
+    {% endif %}
+</div>
+{% else %}
+<p>No items have been prayed for in {{ country_name }} yet.</p>
+{% endfor %}
+
+{# Script to re-apply the party color hiding logic after HTMX swap #}
+{# This assumes the togglePartyAffiliation function and its state are managed globally or on the parent page #}
+<script>
+    if (typeof togglePartyAffiliation === 'function') {
+        // If the main page has a state for whether colors are shown/hidden, re-apply it.
+        // This is a simple re-application; a more robust solution might involve custom events.
+        const button = document.getElementById('toggleAffiliationButton');
+        if (button && button.textContent.includes('Hide')) { // Assuming 'Hide' means colors are currently shown
+            // Temporarily set to "Show" to force togglePartyAffiliation to show colors
+            button.textContent = 'Show Party Colors';
+            togglePartyAffiliation(); // This will then set it to "Hide" and show colors
+        } else {
+            // Ensure they are hidden if the button says "Show" or default state
+            const highlights = document.querySelectorAll('#prayed-list-items-container-{{ country_code }} .highlight');
+            highlights.forEach(span => {
+                span.style.backgroundColor = 'transparent';
+                span.style.color = '';
+            });
+        }
+    }
+</script>
