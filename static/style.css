@@ -4,7 +4,8 @@ body {
     background-color: #f0f0f0;
 }
 
-.content {
+/* Base container for consistent padding, width, etc. */
+.content-container {
     margin: 20px auto;
     padding: 20px;
     background-color: white;
@@ -13,6 +14,13 @@ body {
     width: 80%;
     max-width: 1200px;
 }
+
+/* Modifier for flex behavior, used on index.html */
+.content-container--flex {
+    display: flex;
+    justify-content: space-between; /* Existing behavior from .columns or second .content */
+}
+
 
 .sentence-box {
     display: flex;
@@ -149,37 +157,50 @@ body {
 .other { background-color: #CCCCCC; }
 
 /* Layout */
+/* .columns class can be removed if .content-container--flex replaces its usage */
+/*
 .columns {
     display: flex;
     justify-content: space-between;
     margin: 20px 0;
 }
-
-.column {
+*/
+.column { /* This might still be used within a flex container */
     flex: 1;
     padding: 10px;
 }
 
 /* General Styles */
-.content {
-    display: flex;
-    margin: 20px auto;
-    padding: 20px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 80%;
-    max-width: 1200px;
+/* .content class is now replaced by .content-container and .content-container--flex */
+
+/* Ensure these specific content types inherit from .content-container */
+/* If they have no unique styles, they can just use class="content-container" in HTML */
+/* For now, let's assume they might have specific styles later, so we keep the class names */
+.prayedcontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
 }
 
-.prayedcontent, .statscontent, .queuecontent {
-    margin: 20px auto;
-    padding: 20px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 80%;
-    max-width: 1200px;
+.statscontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
+}
+
+.queuecontent {
+    /* Inherits from .content-container. Add specific styles here if needed. */
+}
+
+/* For text-heavy content containers like About page and intro text */
+.text-content, .intro-text {
+    text-align: left;
+    max-width: 800px; /* Or whatever feels right for reading width */
+    margin-left: auto; /* Center the text block if its max-width is less than parent */
+    margin-right: auto;
+}
+
+.intro-text { /* Specific margins for the intro on home page */
+    margin-bottom: 30px;
+    padding: 15px;
+    background-color: #e9ecef; /* A slightly different background to distinguish it */
+    border-radius: 6px;
 }
 
 .sentence-box {
@@ -187,8 +208,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 40px 0;
-    font-size: 3em;
+    margin: 20px 0; /* Reduced top/bottom margin slightly */
+    font-size: 2em; /* Reduced font size */
+    font-weight: normal; /* Was missing, but present in an earlier definition */
 }
 
 .profile {

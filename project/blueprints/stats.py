@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, current_app, jsonify, redirect, url_for
+from datetime import datetime
 import os
 import sys
 import json
@@ -41,11 +42,13 @@ def statistics_page(country_code):
     # The main statistics.html page will setup containers for charts.
     # Actual data is fetched by client-side JS using the JSON endpoints below.
     # We pass initial config data that JS might need, like party colors.
+    now = datetime.now()
     return render_template('statistics.html',
                            country_code=country_code,
                            country_name=current_country_name,
                            # Pass party color mapping for the selected country to JS via data attribute or JS var
-                           current_country_party_info_json=json.dumps(current_party_info_map_for_js)
+                           current_country_party_info_json=json.dumps(current_party_info_map_for_js),
+                           now=now
                            )
 
 @bp.route('/')

@@ -165,7 +165,8 @@ def get_queue_json():
 @bp.route('/queue_page')
 def queue_page_html():
     items = prayer_service.get_queued_representatives()
-    return render_template('queue.html', queue=items)
+    now = datetime.now()
+    return render_template('queue.html', queue=items, now=now)
 
 # Non-HTMX version of process_item, similar to original app.py version
 @bp.route('/process_item_form', methods=['POST'])
@@ -293,10 +294,12 @@ def prayed_list_page_html(country_code):
         prayed_for_list_to_render = prayed_list_display_specific
         current_country_name = current_app.config['COUNTRIES_CONFIG'][country_code]['name']
 
+    now = datetime.now()
     return render_template('prayed.html',
                            prayed_for_list=prayed_for_list_to_render,
                            country_code=country_code,
-                           country_name=current_country_name
+                           country_name=current_country_name,
+                           now=now
                            )
 
 @bp.route('/')
