@@ -13,12 +13,12 @@
         </div>
 
         <div class="country-switch-links">
-            Switch to:
-            <a href="{{ url_for('prayer.prayed_list_page_html', country_code='overall') }}">Overall Prayed List</a>
-            {% for code, config_data in all_countries_config.items() %} {# Use all_countries_config from context processor #}
-                {% if code != country_code %}
-                    <a href="{{ url_for('prayer.prayed_list_page_html', country_code=code) }}">{{ config_data.name }}</a>
-                {% endif %}
+            <span>Switch to:</span>
+            <a href="{{ url_for('prayer.prayed_list_page_html', country_code='overall') }}"
+               class="switch-link {{ 'active' if country_code == 'overall' else '' }}">Overall</a>
+            {% for code_iter, config_data_iter in all_countries_config.items() %}
+                <a href="{{ url_for('prayer.prayed_list_page_html', country_code=code_iter) }}"
+                   class="switch-link {{ 'active' if country_code == code_iter else '' }}">{{ config_data_iter.name }}</a>
             {% endfor %}
         </div>
         {# This container will be updated by HTMX when an item is put back in queue #}

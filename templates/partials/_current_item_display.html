@@ -4,11 +4,12 @@
 {% if current %}
     <div class="profile">
         <div class="profile-image-container">
-            {% if current.thumbnail %}
-                <img id="profileImage" src="{{ current.thumbnail }}" alt="Profile image of {{ current.person_name }}">
+            {# current.thumbnail should now store path relative to static folder, e.g., mk_images/foo.png or heart_icons/default.png #}
+            {% if current.thumbnail and current.thumbnail != config.HEART_IMG_PATH_RELATIVE %}
+                <img id="profileImage" src="{{ url_for('static', filename=current.thumbnail) }}" alt="Profile image of {{ current.person_name }}">
             {% else %}
-                {# You can use a placeholder image or style the div #}
-                <img id="profileImage" src="{{ url_for('static', filename=HEART_IMG_PATH_RELATIVE) }}" alt="Default profile image placeholder" class="default-profile-image">
+                {# Fallback to default heart image, also using url_for with the relative path from config #}
+                <img id="profileImage" src="{{ url_for('static', filename=config.HEART_IMG_PATH_RELATIVE) }}" alt="Default profile image placeholder" class="default-profile-image">
             {% endif %}
         </div>
         <div class="profile-text">
