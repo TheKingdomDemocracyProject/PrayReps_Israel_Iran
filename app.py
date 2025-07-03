@@ -178,10 +178,9 @@ def update_queue():
         logging.error("app.py: [update_queue] DATABASE_URL not set. Aborting queue update.")
         return
 
-    # Access HEX_MAP_DATA_STORE (module global)
-    # This is populated by data_initializer.py directly modifying this module's global.
-    # For a more robust approach, this should ideally be passed or accessed via current_app.
-    current_hex_map_store = HEX_MAP_DATA_STORE
+    # Access HEX_MAP_DATA_STORE via current_app
+    # This is populated by data_initializer.py onto the app instance.
+    current_hex_map_store = current_app.hex_map_data_store
 
     try:
         logging.info("app.py: [update_queue] Attempting to connect to PostgreSQL DB.")
