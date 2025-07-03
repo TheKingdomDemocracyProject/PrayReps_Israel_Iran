@@ -48,7 +48,7 @@ class Config:
     # APP_DEFINED_HEART_IMG_PATH is 'static/heart_icons/heart_red.png'
     # We need the part relative to static folder for url_for.
     if APP_DEFINED_HEART_IMG_PATH.startswith("static/"):
-        HEART_IMG_PATH_RELATIVE = APP_DEFINED_HEART_IMG_PATH[len("static/") :]
+        HEART_IMG_PATH_RELATIVE = APP_DEFINED_HEART_IMG_PATH[len("static/"):]
     else:
         HEART_IMG_PATH_RELATIVE = APP_DEFINED_HEART_IMG_PATH
 
