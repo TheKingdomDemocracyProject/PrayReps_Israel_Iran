@@ -1,9 +1,10 @@
+import matplotlib
+# must select backend before importing pyplot
+matplotlib.use("Agg")
+
 import logging
 import geopandas as gpd
 import pandas as pd
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
@@ -206,7 +207,8 @@ def plot_hex_map_with_hearts(
                     continue
                 if "name" not in hex_map_gdf.columns:
                     logger.error(
-                        f"'name' column (for hex region ID) missing in hex_map_gdf for {country_code} (specific mapping)."
+                        f"'name' column (for hex region ID) missing in hex_map_gdf "
+                        f"for {country_code} (specific mapping)."
                     )
                     continue
                 item_post_label = prayed_item_iter.get("post_label")
@@ -232,7 +234,8 @@ def plot_hex_map_with_hearts(
                         )
                 else:
                     logger.debug(
-                        f"Prayed item {item_identifier_for_log} has no post_label for specific mapping in {country_code}."
+                        f"Prayed item {item_identifier_for_log} has no post_label "
+                        f"for specific mapping in {country_code}."
                     )
 
             if location_geom:
@@ -361,7 +364,8 @@ def plot_hex_map_with_hearts(
                     )
             else:
                 logger.debug(
-                    f"Top queue item country '{top_queue_item.get('country_code')}' does not match current map country '{country_code}'. No highlight."
+                    f"Top queue item country '{top_queue_item.get('country_code')}' "
+                    f"does not match current map country '{country_code}'. No highlight."
                 )
         else:
             logger.debug("Queue is empty. Nothing to highlight.")
