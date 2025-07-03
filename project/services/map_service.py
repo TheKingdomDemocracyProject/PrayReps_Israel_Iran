@@ -1,6 +1,7 @@
 from flask import current_app
 import os
 import logging  # Using current_app.logger
+import pandas as pd
 
 # Assuming hex_map.py is moved into the project structure or its functions are accessible
 # For now, let's assume it's in the project root, and we might need to adjust paths or import strategy.
@@ -196,4 +197,3 @@ def generate_country_map_image(country_code, prayed_for_items_list, queue_items_
 # If hex_map.py were moved into 'project/utils/', its APP_ROOT would point to 'project/utils/',
 # and it would fail to find 'static/heart_icons' unless paths were adjusted.
 # The current structure (hex_map.py in root) with sys.path append for the service to find it is workable.
-import pandas as pd  # Added for the empty DataFrame in load_all_map_data

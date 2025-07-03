@@ -208,7 +208,7 @@ def mark_representative_as_prayed(candidate_id):
                 )
                 processed_item_details = item_to_update
                 processed_item_details["status"] = "prayed"
-                # Ensure timestamp is in a consistent string format if needed by frontend, though DB stores it as TIMESTAMP
+                # Ensure timestamp is a string for frontend, though DB stores it as TIMESTAMP
                 processed_item_details["timestamp"] = now_timestamp.strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )

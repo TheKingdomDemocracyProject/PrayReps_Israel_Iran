@@ -1,7 +1,4 @@
 import matplotlib
-# must select backend before importing pyplot
-matplotlib.use("Agg")
-
 import logging
 import geopandas as gpd
 import pandas as pd
@@ -12,6 +9,9 @@ from PIL import Image, ImageFile
 import random
 import os
 import time
+
+# must select backend before importing pyplot
+matplotlib.use("Agg")
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 logger = logging.getLogger(__name__)
@@ -432,5 +432,5 @@ if __name__ == "__main__":
     # Standalone test code as before, ensuring paths are correct if run directly.
     logger.info(
         "Standalone example finished. "
-        f"Full plotting requires valid data paths and GeoPandas setup."
+        "Full plotting requires valid data paths and GeoPandas setup."
     )

@@ -12,7 +12,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
     print(f"CONFTTEST_SYSPATH: Added PROJECT_ROOT. sys.path[0]='{sys.path[0]}'")
 else:
-    print(f"CONFTTEST_SYSPATH: PROJECT_ROOT already in sys.path.")
+    print("CONFTTEST_SYSPATH: PROJECT_ROOT already in sys.path.")
 print("CONFTTEST_SYSPATH: Full sys.path now: " + str(sys.path))
 
 
