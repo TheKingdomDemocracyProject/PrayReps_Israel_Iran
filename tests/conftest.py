@@ -95,7 +95,10 @@ def app(monkeypatch):  # Add monkeypatch as an argument
     )
     assert (
         expected_mock_db_url_part in actual_app_config_db_url
-    ), f"App.config['DATABASE_URL'] not using mocked URL. Expected '{expected_mock_db_url_part}' in path '{actual_app_config_db_url}'"
+    ), (
+        f"App.config['DATABASE_URL'] not using mocked URL. "
+        f"Expected '{expected_mock_db_url_part}' in path '{actual_app_config_db_url}'"
+    )
 
     yield app_instance
 
