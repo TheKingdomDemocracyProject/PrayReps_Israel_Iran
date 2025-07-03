@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
     print(f"CONFTTEST_SYSPATH: Added PROJECT_ROOT. sys.path[0]='{sys.path[0]}'")
 else:
     print(f"CONFTTEST_SYSPATH: PROJECT_ROOT already in sys.path.")
-print(f"CONFTTEST_SYSPATH: Full sys.path now: {sys.path}")
+print("CONFTTEST_SYSPATH: Full sys.path now: " + str(sys.path))
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def app(monkeypatch):  # Add monkeypatch as an argument
             del os.environ["DATABASE_URL"]
     else:
         os.environ["DATABASE_URL"] = original_db_url_env
-    print(f"CONFTTEST_FIXTURE_APP: Restored os.environ['DATABASE_URL'] (if any).")
+    print("CONFTTEST_FIXTURE_APP: Restored os.environ['DATABASE_URL'] (if any).")
 
     print(
         f"CONFTTEST_FIXTURE_APP: app.config['DATABASE_URL'] is: {app_instance.config['DATABASE_URL']}"
