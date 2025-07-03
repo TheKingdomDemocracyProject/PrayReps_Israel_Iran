@@ -338,8 +338,8 @@ nav li a.active { /* Optional: style for the current page's link */
     /* Assuming a common aspect ratio for maps, e.g., 16:9 or 4:3.
        Adjust 16 / 9 based on your actual map image aspect ratios.
        If they vary wildly, a fixed min-height might be a fallback. */
-    aspect-ratio: 16 / 9;
-    background-color: #f0f0f0; /* Light grey placeholder background */
+    aspect-ratio: 4 / 3;
+    background-color: white; /* Light grey placeholder background */
     display: flex;
     align-items: center;
     justify-content: center;
