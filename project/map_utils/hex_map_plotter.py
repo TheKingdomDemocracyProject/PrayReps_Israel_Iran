@@ -86,7 +86,9 @@ def plot_hex_map_with_hearts(
 ):
     output_path = os.path.join(output_dir, output_filename)
     logger.debug(
-        f"Plotting hex map for country {country_code}. Prayed: {len(prayed_for_items_list)}, Queue: {len(queue_items_list)}. Output: {output_path}"
+        f"Plotting hex map for country {country_code}. "
+        f"Prayed: {len(prayed_for_items_list)}, Queue: {len(queue_items_list)}. "
+        f"Output: {output_path}"
     )
 
     if hex_map_gdf is None or hex_map_gdf.empty:
@@ -179,16 +181,19 @@ def plot_hex_map_with_hearts(
                         location_geom = geom_series.geometry.iloc[0]
                     else:
                         logger.warning(
-                            f"Geometry not found for assigned hex ID {assigned_hex_id} for {item_identifier_for_log} in {country_code}."
+                            f"Geometry not found for assigned hex ID {assigned_hex_id} "
+                            f"for {item_identifier_for_log} in {country_code}."
                         )
                 else:
                     logger.warning(
-                        f"Prayed item {item_identifier_for_log} for {country_code} (random alloc) has no/invalid assigned hex_id."
+                        f"Prayed item {item_identifier_for_log} for {country_code} "
+                        f"(random alloc) has no/invalid assigned hex_id."
                     )
             else:
                 if post_label_mapping_df is None or post_label_mapping_df.empty:
                     logger.error(
-                        f"Post label mapping is missing/empty for {country_code} (specific mapping). Cannot place heart for {item_identifier_for_log}."
+                        f"Post label mapping is missing/empty for {country_code} "
+                        f"(specific mapping). Cannot place heart for {item_identifier_for_log}."
                     )
                     continue
                 if not all(
@@ -218,7 +223,8 @@ def plot_hex_map_with_hearts(
                             location_geom = geom_series.geometry.iloc[0]
                         else:
                             logger.debug(
-                                f"No geometry for hex region name {hex_region_name} (from label {item_post_label}) in {country_code}."
+                                f"No geometry for hex region name {hex_region_name} "
+                                f"(from label {item_post_label}) in {country_code}."
                             )
                     else:
                         logger.debug(
@@ -241,7 +247,8 @@ def plot_hex_map_with_hearts(
                     placed_heart_count += 1
                 else:
                     logger.warning(
-                        f"Skipping heart for {item_identifier_for_log} in {country_code} (heart image load failed)."
+                        f"Skipping heart for {item_identifier_for_log} in {country_code} "
+                        f"(heart image load failed)."
                     )
         logger.debug(f"Placed {placed_heart_count} hearts for {country_code}.")
 
@@ -266,11 +273,14 @@ def plot_hex_map_with_hearts(
                             highlight_geom = geom_series_q.geometry.iloc[0]
                         else:
                             logger.warning(
-                                f"Highlight failed for {country_code}: Assigned hex ID {assigned_hex_id_q} for {item_identifier_for_log_q} found NO GEOMETRY."
+                                f"Highlight failed for {country_code}: Assigned hex ID "
+                                f"{assigned_hex_id_q} for {item_identifier_for_log_q} "
+                                f"found NO GEOMETRY."
                             )
                     else:
                         logger.warning(
-                            f"Top queue item {item_identifier_for_log_q} for {country_code} (random alloc) has no/invalid assigned hex_id for highlighting."
+                            f"Top queue item {item_identifier_for_log_q} for {country_code} "
+                            f"(random alloc) has no/invalid assigned hex_id for highlighting."
                         )
                 else:
                     if (
@@ -298,19 +308,23 @@ def plot_hex_map_with_hearts(
                                     highlight_geom = geom_series_q.geometry.iloc[0]
                                 else:
                                     logger.warning(
-                                        f"No geometry for hex region name {hex_region_name_q} for specific queue highlighting in {country_code}."
+                                        f"No geometry for hex region name {hex_region_name_q} "
+                                        f"for specific queue highlighting in {country_code}."
                                     )
                             else:
                                 logger.warning(
-                                    f"No mapping for post_label {top_queue_post_label} for specific queue highlighting in {country_code}."
+                                    f"No mapping for post_label {top_queue_post_label} "
+                                    f"for specific queue highlighting in {country_code}."
                                 )
                         else:
                             logger.info(
-                                f"Top queue item {item_identifier_for_log_q} for {country_code} has no post_label for specific highlighting."
+                                f"Top queue item {item_identifier_for_log_q} for {country_code} "
+                                f"has no post_label for specific highlighting."
                             )
                     else:
                         logger.warning(
-                            f"Data missing for specific queue highlighting in {country_code} (map data or mapping df issues)."
+                            f"Data missing for specific queue highlighting in {country_code} "
+                            f"(map data or mapping df issues)."
                         )
 
                 if highlight_geom:
@@ -396,7 +410,8 @@ def plot_hex_map_with_hearts(
         try:
             mod_time_after = os.path.getmtime(output_path)
             logger.debug(
-                f"File {output_path} exists after save attempt. Last modified: {time.ctime(mod_time_after)} (Timestamp: {mod_time_after})"
+                f"File {output_path} exists after save attempt. "
+                f"Last modified: {time.ctime(mod_time_after)} (Timestamp: {mod_time_after})"
             )
         except Exception as e_stat_after:  # Renamed variable
             logger.error(
@@ -412,5 +427,6 @@ if __name__ == "__main__":
     logger.info("Running hex_map_plotter.py standalone example...")
     # Standalone test code as before, ensuring paths are correct if run directly.
     logger.info(
-        "Standalone example finished. Full plotting requires valid data paths and GeoPandas setup."
+        "Standalone example finished. "
+        f"Full plotting requires valid data paths and GeoPandas setup."
     )
